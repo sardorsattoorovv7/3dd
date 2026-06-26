@@ -18,7 +18,11 @@ from mpl_toolkits.mplot3d import Axes3D
 # ============================================================
 # PROFIL MA'LUMOTLARI (GOST asosida) 
 # ============================================================
-
+LSTK_PROFILES = {
+    "Ustun": "Profil 100x100x4 mm",
+    "Ferma": "Profil 60x60x3 mm",
+    "Progon": "Profil 80x40x3 mm",
+}
 # 1. Dvuhtavrlar (GOST R 57837-2017) - Ustunlar uchun
 GOST_COLUMNS_KG_M = {
     "Dvuhtavr 20B1": 22.4,
@@ -65,7 +69,15 @@ GOST_CHANNEL_KG_M = {
     "Shveller 20P": 18.40,
     "Shveller 24P": 24.00,
 }
-
+def compute_screw_connections(metal_kg):
+    """LSTK uchun vintli birikma hisobi"""
+    screws_kg = metal_kg * 0.015  # 1.5% vintlar og'irligi
+    screws_count = int(metal_kg / 2.5)  # Har 2.5 kg ga 1 vint
+    return {
+        "screws_kg": round(screws_kg, 1),
+        "screws_count": screws_count,
+        "screws_cost": screws_count * 0.5  # $0.5 dona
+    }
 def get_profile_weight(profile_type, profile_name):
     """Profil turi va nomiga qarab kg/m og'irlikni qaytaradi"""
     if profile_type == "column":
@@ -339,6 +351,180 @@ def compute_column_layout(L, W, column_spacing=8.5):
         "spacing_z": actual_spacing_z,
         "column_spacing": column_spacing,  # 🔽 Qo'shimcha
     }
+# compute_metal_quantities funksiyasidan OLDIN qo'shing (taxminan 200-qator atrofida)
+
+def get_construction_system_factors(system_type, L, W, H):
+    """
+    LMK yoki LSTK uchun koeffitsiyentlarni qaytaradi
+    """
+    # 🔽 TO'G'RI TEKSHIRISH
+    if system_type == "LSTK (Yengil Po'lat)":
+        return {
+            "weight_multiplier": 0.65,
+            "column_kg_m": 18.0,
+            "beam_kg_m": 14.0,
+            "truss_kg_m": 12.0,
+            "bracing_kg_m": 8.0,
+            "connection_type": "screwed",
+            "max_span": 30,
+            "service_life": 35,
+            "corrosion_protection": True,
+        }
+    else:  # LMK (Yengil Metall)
+        return {
+            "weight_multiplier": 1.0,
+            "column_kg_m": 32.5,
+            "beam_kg_m": 24.5,
+            "truss_kg_m": 18.5,
+            "bracing_kg_m": 14.0,
+            "connection_type": "welded",
+            "max_span": 80,
+            "service_life": 50,
+            "corrosion_protection": False,
+        }
+def compute_metal_quantities(L, W, H, roof_pitch, column_spacing=8.5, system_type="LMK (Yengil Metall)"):
+    """
+    Metall miqdorlarini hisoblash - LMK/LSTK uchun
+    """
+    # 🔽 BU QATORNI TEKSHIRING - system_type to'g'ri kelayaptimi?
+    factors = get_construction_system_factors(system_type, L, W, H)
+    
+    # 🔽 DEBUG UCHUN (ishlatib ko'ring)
+    # st.write(f"System type: {system_type}")
+    # st.write(f"Factors: {factors}")
+    
+    pitch_rad = math.radians(roof_pitch)
+    layout = compute_column_layout(L, W, column_spacing)
+    n_cols_x = layout["n_cols_x"]
+    n_cols_z = layout["n_cols_z"]
+    prolyot = W
+    
+    
+    # ===== 1) USTUNLAR =====
+    total_columns = (n_cols_x * 2) + (max(0, n_cols_z - 2) * 2)
+    column_meters = total_columns * H
+    
+    # Balandlik koeffitsiyenti
+    if H <= 4:
+        height_factor = 1.0
+    elif H <= 6:
+        height_factor = 1.05
+    elif H <= 8:
+        height_factor = 1.10
+    elif H <= 10:
+        height_factor = 1.20
+    else:
+        height_factor = 1.35
+    
+    # 🔽 LMK/LSTK ga qarab asosiy og'irlik
+    if prolyot <= 12:
+        base_kg_m = factors["column_kg_m"] * 0.85
+    elif prolyot <= 18:
+        base_kg_m = factors["column_kg_m"] * 0.90
+    elif prolyot <= 24:
+        base_kg_m = factors["column_kg_m"] * 1.0
+    elif prolyot <= 30:
+        base_kg_m = factors["column_kg_m"] * 1.10
+    else:
+        base_kg_m = factors["column_kg_m"] * 1.30
+    
+    # 🔽 LSTK uchun yengilroq
+    if "LSTK" in system_type:
+        base_kg_m = base_kg_m * 0.55  # 45% yengilroq
+    
+    column_kg_m = base_kg_m * height_factor
+    column_kg = column_meters * column_kg_m
+    column_qoshimcha = total_columns * 45 * height_factor * factors["weight_multiplier"]
+    
+    # ===== 2) TOSINLAR =====
+    beam_meters = 2 * (L + W) * 1.5 * factors["weight_multiplier"]
+    beam_kg_m = factors["beam_kg_m"] * (0.6 if "LSTK" in system_type else 1.0)
+    beam_kg = beam_meters * beam_kg_m
+    
+    # ===== 3) FERMALAR =====
+    truss_count = n_cols_x
+    if roof_pitch > 0:
+        slope = (W / 2) / math.cos(pitch_rad)
+        truss_length = slope * 2
+    else:
+        truss_length = W
+    
+    if prolyot <= 12:
+        truss_mult = 1.8 * factors["weight_multiplier"]
+    elif prolyot <= 18:
+        truss_mult = 2.0 * factors["weight_multiplier"]
+    elif prolyot <= 25:
+        truss_mult = 2.2 * factors["weight_multiplier"]
+    elif prolyot <= 30:
+        truss_mult = 2.4 * factors["weight_multiplier"]
+    else:
+        truss_mult = 2.6 * factors["weight_multiplier"]
+    
+    truss_meters = truss_count * truss_length * truss_mult
+    truss_kg_m = factors["truss_kg_m"] * (0.6 if "LSTK" in system_type else 1.0)
+    truss_kg = truss_meters * truss_kg_m
+    truss_qoshimcha = truss_count * 60 * factors["weight_multiplier"]
+    
+    # ===== 4) PROGONLAR =====
+    purlin_result = compute_purlins(L, W, H, roof_pitch, 
+                                   system_type=system_type,
+                                   factors=factors)
+    longitudinal_meters = purlin_result["total_m"]
+    longitudinal_kg = purlin_result["total_kg"]
+    
+    # ===== 5) BOG'LAMALAR =====
+    vert_bog_m = n_cols_x * H * 0.6 * factors["weight_multiplier"]
+    goriz_bog_m = (L + W) * 0.6 * factors["weight_multiplier"]
+    seysmik_m = (L + W) * 0.4 * factors["weight_multiplier"]
+    
+    jami_boglamalar_m = vert_bog_m + goriz_bog_m + seysmik_m
+    bog_kg_m = factors["bracing_kg_m"] * (0.6 if "LSTK" in system_type else 1.0)
+    jami_boglamalar_kg = jami_boglamalar_m * bog_kg_m
+    
+    # ===== 6) ASOSIY METALL =====
+    asosiy_metal_kg = (column_kg + column_qoshimcha + beam_kg + truss_kg + 
+                        truss_qoshimcha + longitudinal_kg + jami_boglamalar_kg)
+    
+    # ===== 7) BIRIKMA DETALLARI =====
+    if "LSTK" in system_type:
+        birikma_k = 0.02  # Vintli birikma - kamroq
+    else:
+        birikma_k = 0.04  # Payvandlash - ko'proq
+    
+    birikma_kg = asosiy_metal_kg * birikma_k
+    
+    # ===== 8) JAMI =====
+    total_metal_kg = asosiy_metal_kg + birikma_kg
+    
+    return {
+        "total_columns": total_columns,
+        "truss_count": truss_count,
+        "column_meters": round(column_meters, 1),
+        "column_kg": round(column_kg + column_qoshimcha, 1),
+        "column_tonna": round((column_kg + column_qoshimcha) / 1000, 3),
+        "beam_meters": round(beam_meters, 1),
+        "beam_kg": round(beam_kg, 1),
+        "beam_tonna": round(beam_kg / 1000, 3),
+        "truss_meters": round(truss_meters, 1),
+        "truss_kg": round(truss_kg + truss_qoshimcha, 1),
+        "truss_tonna": round((truss_kg + truss_qoshimcha) / 1000, 3),
+        "longitudinal_meters": round(longitudinal_meters, 1),
+        "longitudinal_kg": round(longitudinal_kg, 1),
+        "longitudinal_tonna": round(longitudinal_kg / 1000, 3),
+        "boglamalar_kg": round(jami_boglamalar_kg, 1),
+        "boglamalar_tonna": round(jami_boglamalar_kg / 1000, 3),
+        "birikma_kg": round(birikma_kg, 1),
+        "birikma_tonna": round(birikma_kg / 1000, 3),
+        "total_metal_kg": round(total_metal_kg, 1),
+        "total_metal_tonna": round(total_metal_kg / 1000, 3),
+        "column_height_factor": height_factor,
+        "column_base_kg_m": base_kg_m,
+        "column_actual_kg_m": round(column_kg_m, 1),
+        "system_type": system_type,
+        "service_life": factors["service_life"],
+        "connection_type": factors["connection_type"],
+        "corrosion_protection": factors["corrosion_protection"],
+    }
 # ============================================================
 # 1. PROFIL TANLASH FUNKSIYASI - compute_metal_quantities funksiyasidan OLDIN qo'shiladi
 # ============================================================
@@ -390,151 +576,7 @@ def select_optimal_profile(load_kg, span_m, height_m, profile_type="column"):
         "weight_factor": 1.0  # Zaxira koeffitsiyentini 1 ga tushirdik
     }
 # ---------------------------------------------------------------------------
-# Yordamchi: metall karkas miqdorlarini (metr/kg/tonna) hisoblash - har bir
-def compute_metal_quantities(L, W, H, roof_pitch, column_spacing=8.5):
-    """
-    Metall miqdorlarini hisoblash - OPTIMALLASHTIRILGAN
-    """
-    pitch_rad = math.radians(roof_pitch)
 
-    layout = compute_column_layout(L, W, column_spacing)
-    n_cols_x = layout["n_cols_x"]
-    n_cols_z = layout["n_cols_z"]
-
-    prolyot = W
-
-    # ===== 1) USTUNLAR - OPTIMALLASHTIRILGAN =====
-    total_columns = (n_cols_x * 2) + (max(0, n_cols_z - 2) * 2)
-    column_meters = total_columns * H
-    
-    # Balandlik koeffitsiyenti (H=3.3 uchun 1.0)
-    if H <= 4:
-        height_factor = 1.0
-    elif H <= 6:
-        height_factor = 1.05
-    elif H <= 8:
-        height_factor = 1.10
-    elif H <= 10:
-        height_factor = 1.20
-    elif H <= 12:
-        height_factor = 1.35
-    else:
-        height_factor = 1.50
-    
-    # Prolyotga qarab asosiy og'irlik
-    if prolyot <= 12:
-        base_kg_m = 28.0  # 🔽 KAMAYTIRILDI
-    elif prolyot <= 18:
-        base_kg_m = 30.0  # 🔽 KAMAYTIRILDI
-    elif prolyot <= 24:
-        base_kg_m = 35.0
-    elif prolyot <= 30:
-        base_kg_m = 38.0
-    elif prolyot <= 36:
-        base_kg_m = 42.0
-    else:
-        base_kg_m = 50.0
-    
-    column_kg_m = base_kg_m * height_factor
-    column_kg = column_meters * column_kg_m
-    column_qoshimcha = total_columns * 45 * height_factor  # 🔽 KAMAYTIRILDI
-
-    # ===== 2) TOSINLAR =====
-    beam_meters = 2 * (L + W) * 1.5  # 🔽 KAMAYTIRILDI
-    beam_kg_m = 22.0  # 🔽 KAMAYTIRILDI
-    beam_kg = beam_meters * beam_kg_m
-
-    # ===== 3) FERMALAR =====
-    truss_count = n_cols_x # 🔽 KAMAYTIRILDI
-    
-    if roof_pitch > 0:
-        slope = (W / 2) / math.cos(pitch_rad)
-        truss_length = slope * 2
-    else:
-        truss_length = W
-    
-    if prolyot <= 12:
-        truss_mult = 1.8  # 🔽 KAMAYTIRILDI
-    elif prolyot <= 18:
-        truss_mult = 2.0  # 🔽 KAMAYTIRILDI
-    elif prolyot <= 25:
-        truss_mult = 2.2  # 🔽 KAMAYTIRILDI
-    elif prolyot <= 30:
-        truss_mult = 2.4
-    else:
-        truss_mult = 2.6
-    
-    truss_meters = truss_count * truss_length * truss_mult
-    truss_kg_m = 20.0  # 🔽 KAMAYTIRILDI
-    truss_kg = truss_meters * truss_kg_m
-    truss_qoshimcha = truss_count * 60  # 🔽 KAMAYTIRILDI
-
-    # ===== 4) PROGONLAR =====
-    purlin_result = compute_purlins(L, W, H, roof_pitch)
-    longitudinal_meters = purlin_result["total_m"]
-    longitudinal_kg = purlin_result["total_kg"]
-
-    # ===== 5) BOG'LAMALAR =====
-    vert_bog_m = n_cols_x * H * 0.6  # 🔽 KAMAYTIRILDI
-    
-    if H > 15:
-        goriz_bog_m = (L + W) * 1.2  # 🔽 KAMAYTIRILDI
-    else:
-        goriz_bog_m = (L + W) * 0.6  # 🔽 KAMAYTIRILDI
-    
-    if H > 20:
-        seysmik_m = (L + W) * 0.6  # 🔽 KAMAYTIRILDI
-    elif H > 15:
-        seysmik_m = (L + W) * 0.5
-    else:
-        seysmik_m = (L + W) * 0.4  # 🔽 KAMAYTIRILDI
-    
-    jami_boglamalar_m = vert_bog_m + goriz_bog_m + seysmik_m
-    jami_boglamalar_kg = jami_boglamalar_m * 14.0  # 🔽 KAMAYTIRILDI
-
-    # ===== 6) ASOSIY METALL =====
-    asosiy_metal_kg = (column_kg + column_qoshimcha + beam_kg + truss_kg + 
-                        truss_qoshimcha + longitudinal_kg + jami_boglamalar_kg)
-    
-    # ===== 7) BIRIKMA DETALLARI =====
-    if H > 20:
-        birikma_k = 0.06  # 🔽 KAMAYTIRILDI
-    elif H > 15:
-        birikma_k = 0.05
-    else:
-        birikma_k = 0.04  # 🔽 KAMAYTIRILDI
-    
-    birikma_kg = asosiy_metal_kg * birikma_k
-
-    # ===== 8) JAMI =====
-    total_metal_kg = asosiy_metal_kg + birikma_kg
-
-    return {
-        "total_columns": total_columns,
-        "truss_count": truss_count,
-        "column_meters": round(column_meters, 1),
-        "column_kg": round(column_kg + column_qoshimcha, 1),
-        "column_tonna": round((column_kg + column_qoshimcha) / 1000, 3),
-        "beam_meters": round(beam_meters, 1),
-        "beam_kg": round(beam_kg, 1),
-        "beam_tonna": round(beam_kg / 1000, 3),
-        "truss_meters": round(truss_meters, 1),
-        "truss_kg": round(truss_kg + truss_qoshimcha, 1),
-        "truss_tonna": round((truss_kg + truss_qoshimcha) / 1000, 3),
-        "longitudinal_meters": round(longitudinal_meters, 1),
-        "longitudinal_kg": round(longitudinal_kg, 1),
-        "longitudinal_tonna": round(longitudinal_kg / 1000, 3),
-        "boglamalar_kg": round(jami_boglamalar_kg, 1),
-        "boglamalar_tonna": round(jami_boglamalar_kg / 1000, 3),
-        "birikma_kg": round(birikma_kg, 1),
-        "birikma_tonna": round(birikma_kg / 1000, 3),
-        "total_metal_kg": round(total_metal_kg, 1),
-        "total_metal_tonna": round(total_metal_kg / 1000, 3),
-        "column_height_factor": height_factor,
-        "column_base_kg_m": base_kg_m,
-        "column_actual_kg_m": round(column_kg_m, 1),
-    }
-# 2. KENGAYTIRILGAN METALL HISOBI - compute_metal_quantities funksiyasidan KEYIN qo'shiladi
 # ============================================================
 
 def compute_metal_quantities_advanced(L, W, H, roof_pitch, params):
@@ -2210,7 +2252,7 @@ setTimeout(() => {{
 
 
 def calculate_construction_materials(params):
-    """Bitta params dict qabul qiladigan versiya - BALANDLIKNI HISOBGA OLGAN"""
+    """Bitta params dict qabul qiladigan versiya - LMK/LSTK bilan"""
     
     # Parametrlarni olish
     L = params.get("L", 30)
@@ -2218,6 +2260,7 @@ def calculate_construction_materials(params):
     H = params.get("H", 7.5)
     roof_pitch = params.get("roof_pitch", 12)
     column_spacing = params.get("column_spacing", 8.5)
+    system_type = params.get("construction_system", "LMK (Yengil Metall)")
     wall_type = params.get("wall_type", "Sendvich Panel")
     roof_type = params.get("roof_type", "Sendvich panel")
     floor_type = params.get("floor_type", "Sanoat Betoni")
@@ -2349,7 +2392,8 @@ def calculate_construction_materials(params):
     # ============================================================
     # 6. METALL HISOBI
     # ============================================================
-    metal = compute_metal_quantities(L, W, H, roof_pitch, column_spacing)
+    metal = compute_metal_quantities(L, W, H, roof_pitch, column_spacing, system_type)
+
 
     
     # ============================================================
@@ -2488,75 +2532,55 @@ def calculate_construction_materials(params):
         "window_price": window_price,
         "door_price": door_price,
         "labor_percent": labor_percent,
+        "construction_system": system_type,
+        "connection_type": metal.get("connection_type", "welded"),
+        "service_life": metal.get("service_life", 50),
+        "corrosion_protection": metal.get("corrosion_protection", False),
     }
 
 # ============================================================
 # ========== YANGI QO'SHILADIGAN FUNKSIYALAR ==========
-# ============================================================
 def compute_purlins(L, W, H, roof_pitch, purlin_profile="Profil 120x60x4 mm", 
                     wall_purlin_profile="Profil 100x50x4 mm", 
-                    bracing_profile="Shveller 14P", panel_width=1.0):
+                    bracing_profile="Shveller 14P", panel_width=1.0,
+                    system_type="LMK (Yengil Metall)", factors=None):
     """
-    Progonlar (purlins) hisobi - BALANDLIKKA QARAB
-    H=10m dan yuqori uchun avtomatik oshiriladi
+    Progonlar (purlins) hisobi - LMK/LSTK uchun
+    """
+    if factors is None:
+        factors = get_construction_system_factors(system_type, L, W, H)
     
-    Parametrlar:
-        purlin_profile: Tom progonlari uchun profil (GOST_RECT_PURLIN_KG_M dan)
-        wall_purlin_profile: Devor progonlari uchun profil (GOST_RECT_PURLIN_KG_M dan)
-        bracing_profile: Bog'lamalar uchun profil (GOST_CHANNEL_KG_M dan)
-    """
     pitch_rad = math.radians(roof_pitch)
     
-    # Progonlarning kg/m og'irliklarini olish
-    purlin_kg_m = get_profile_weight("purlin", purlin_profile)
-    wall_purlin_kg_m = get_profile_weight("purlin", wall_purlin_profile)
-    bracing_kg_m = get_profile_weight("bracing", bracing_profile)
+    # Progonlarning kg/m og'irliklari
+    purlin_kg_m = get_profile_weight("purlin", purlin_profile) * factors["weight_multiplier"]
+    wall_purlin_kg_m = get_profile_weight("purlin", wall_purlin_profile) * factors["weight_multiplier"]
+    bracing_kg_m = get_profile_weight("bracing", bracing_profile) * factors["weight_multiplier"]
     
-    # ===== 1. DEVOR PROGONLARI (balandlikka qarab) =====
+    # ===== 1. DEVOR PROGONLARI =====
     if H <= 4:
         wall_rows = 2
-        spacing = 2.0
     elif H <= 6:
         wall_rows = 3
-        spacing = 2.0
     elif H <= 8:
         wall_rows = 4
-        spacing = 2.0
     elif H <= 10:
         wall_rows = 5
-        spacing = 2.0
     elif H <= 12:
         wall_rows = 6
-        spacing = 2.0
     elif H <= 14:
         wall_rows = 7
-        spacing = 2.0
     elif H <= 16:
         wall_rows = 8
-        spacing = 2.0
     elif H <= 18:
         wall_rows = 9
-        spacing = 2.0
-    elif H <= 20:
-        wall_rows = 10
-        spacing = 2.0
-    elif H <= 22:
-        wall_rows = 11
-        spacing = 2.0
-    elif H <= 24:
-        wall_rows = 12
-        spacing = 2.0
-    elif H <= 26:
-        wall_rows = 13
-        spacing = 2.0
-    elif H <= 28:
-        wall_rows = 14
-        spacing = 2.0
     else:
-        wall_rows = 16
-        spacing = 1.8
+        wall_rows = 10
     
-    # Devor progonlari - 4 ta devor
+    # 🔽 LSTK uchun progonlar oralig'i kichikroq
+    if "LSTK" in system_type:
+        wall_rows = min(wall_rows + 2, 12)  # Ko'proq progon
+    
     wall_purlins_m = wall_rows * 2 * (L + W)
     wall_purlins_kg = wall_purlins_m * wall_purlin_kg_m
     
@@ -2570,23 +2594,26 @@ def compute_purlins(L, W, H, roof_pitch, purlin_profile="Profil 120x60x4 mm",
     else:
         roof_rows = 6
     
+    # 🔽 LSTK uchun ko'proq progon
+    if "LSTK" in system_type:
+        roof_rows += 1
+    
     slope_length = W / (2 * math.cos(pitch_rad)) if roof_pitch > 0 else W / 2
     roof_purlins_m = roof_rows * 2 * slope_length * 2
     roof_purlins_kg = roof_purlins_m * purlin_kg_m
     
-    # ===== 3. QOSHIMCHA (baland binolar uchun) =====
+    # ===== 3. QOSHIMCHA =====
+    wind_braces_m = 0
+    extra_braces_m = 0
     if H > 15:
         wind_braces_m = int(H / 5) * (L + W) * 0.5
         extra_braces_m = (H - 15) * 2 * (L + W) * 0.2
-    else:
-        wind_braces_m = 0
-        extra_braces_m = 0
     
     wind_braces_kg = wind_braces_m * bracing_kg_m
     extra_braces_kg = extra_braces_m * bracing_kg_m
     
-    # ===== 4. QOSHIMCHA OGIRLIK (8%) =====
-    additional = (wall_purlins_kg + roof_purlins_kg) * 0.08
+    # ===== 4. QOSHIMCHA OGIRLIK =====
+    additional = (wall_purlins_kg + roof_purlins_kg) * 0.08 * factors["weight_multiplier"]
     
     # ===== 5. JAMI =====
     total_kg = wall_purlins_kg + roof_purlins_kg + wind_braces_kg + extra_braces_kg + additional
@@ -2595,7 +2622,6 @@ def compute_purlins(L, W, H, roof_pitch, purlin_profile="Profil 120x60x4 mm",
     return {
         "wall_rows": wall_rows,
         "roof_rows": roof_rows,
-        "spacing": round(spacing, 2),
         "wall_purlins_m": round(wall_purlins_m, 1),
         "roof_purlins_m": round(roof_purlins_m, 1),
         "wind_braces_m": round(wind_braces_m, 1),
@@ -2608,7 +2634,6 @@ def compute_purlins(L, W, H, roof_pitch, purlin_profile="Profil 120x60x4 mm",
         "additional_kg": round(additional, 1),
         "total_kg": round(total_kg, 1),
         "total_tonna": round(total_kg / 1000, 3),
-        # Profil ma'lumotlari
         "purlin_profile": purlin_profile,
         "purlin_kg_m": round(purlin_kg_m, 2),
         "wall_purlin_profile": wall_purlin_profile,
@@ -2616,7 +2641,6 @@ def compute_purlins(L, W, H, roof_pitch, purlin_profile="Profil 120x60x4 mm",
         "bracing_profile": bracing_profile,
         "bracing_kg_m": round(bracing_kg_m, 2),
     }
-# 2. BOG'LAMALAR FUNKSIYASI
 def compute_bracing(L, W, H, seismic_zone, wind_region="B"):
     """
     SNiP II-23-81 bo'yicha bog'lamalar hisobi
@@ -3554,6 +3578,23 @@ def construction_sidebar():
             st.caption(f"Tom progonlari: {purlin_profile} ({get_profile_weight('purlin', purlin_profile)} kg/m)")
             st.caption(f"Devor progonlari: {wall_purlin_profile} ({get_profile_weight('purlin', wall_purlin_profile)} kg/m)")
             st.caption(f"Bog'lamalar: {bracing_profile} ({get_profile_weight('bracing', bracing_profile)} kg/m)")
+        # construction_sidebar() funksiyasiga qo'shing (taxminan 2200-qator atrofida)
+
+        with st.sidebar.expander("Konstruksiya turi", expanded=True):
+            construction_system = st.radio(
+                "Metall karkas turi",
+                options=["LMK (Yengil Metall)", "LSTK (Yengil Po'lat)"],
+                index=0,
+                key="construction_system",
+                help="""
+                **LMK**: Qalin metall (8-40mm), payvandlash/boltlar, katta oraliqli binolar
+                **LSTK**: Yupqa sinklangan po'lat (0.7-4mm), vintli birikma, angar/omborlar
+                """
+            )
+            
+            # 🔽 BU QISMNI QO'SHING - tanlangan variantni ko'rsatish
+            st.write(f"Tanlangan: **{construction_system}**")
+         
     with st.sidebar.expander("Derazalar (har devor uchun)", expanded=False):
         st.caption("Old fasad (darvozalar tomon)")
         col_w1, col_w2 = st.columns(2)
@@ -3731,6 +3772,7 @@ def construction_sidebar():
          "purlin_profile": purlin_profile,
         "wall_purlin_profile": wall_purlin_profile,
         "bracing_profile": bracing_profile,
+        "construction_system": construction_system,
     }
 
 
@@ -3739,6 +3781,7 @@ def construction_sidebar():
 
 def construction_main(params):
     """Asosiy kontent - 3D vizualizatsiya va materiallar hisobi"""
+    
     construction_type = params["construction_type"]
     const_info = construction_types[construction_type]
 
@@ -3751,6 +3794,7 @@ def construction_main(params):
 
     materials = calculate_advanced_materials(params) 
     resilience = compute_resilience_report(params, materials)
+  
 
     st.markdown("### 3D Vizualizatsiya")
     st.caption("Sichqoncha bilan aylantiring | Kamera tugmalarini bosing | Elementlarni yoqing/ochiring")
@@ -3781,8 +3825,8 @@ def construction_main(params):
     st.info(f"""
     🏗 **Ustunlar joylashuvi:**
     - Oraliq: {column_spacing:.1f} m
-    - Uzunlik bo'ylab: {layout['n_cols_x']} ta  )
-    - Kenglik bo'ylab: {layout['n_cols_z']} ta )
+    - Uzunlik bo'ylab: {layout['n_cols_x']} ta
+    - Kenglik bo'ylab: {layout['n_cols_z']} ta
     - Jami ustunlar: {layout['n_cols_x'] * layout['n_cols_z']} ta
     - Fermalar: {layout['n_cols_x']} ta
     """)
@@ -3811,15 +3855,13 @@ def construction_main(params):
         snow_kg_m2=resilience["snow"]["S_kg_m2"],
         column_utilization=resilience["column_utilization"],
         foundation_utilization=resilience["foundation_utilization"],
-        column_spacing=column_spacing  # ✅ BU QATOR QO'SHILISHI KERAK!
-        
+        column_spacing=column_spacing
     )
     
     st.caption("Yuqoridagi panelda Qor / Yomg'ir / Shamol effektlarini yoqib ko'ring, yoki Zilzila testi bilan tanlangan seysmik zona va chidamlilik hisobiga mos tebranishni sinab ko'ring.")
     
     # 🔽 Unique key - Streamlit caching muammosini hal qiladi
     components.html(html_3d, height=650, scrolling=False)
-
 
     st.markdown("### Asosiy Ko'rsatkichlar")
     col1, col2, col3, col4 = st.columns(4)
@@ -3833,7 +3875,6 @@ def construction_main(params):
     with col4:
         st.metric("1 m² narxi", f"${materials['cost_per_m2']:,.1f}")
 
-
     # ========== TABLAR ==========
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         " O'lchamlar", 
@@ -3841,7 +3882,7 @@ def construction_main(params):
         " Xarajatlar", 
         " Metall tahlili", 
         " Chidamlilik",
-        " Chizmalar"  # YANGI TAB
+        " Chizmalar"
     ])
 
     with tab1:
@@ -3978,33 +4019,126 @@ def construction_main(params):
             </div>
             """, unsafe_allow_html=True)
 
+    # ========== TAB 4: METALL TAHLILI (TO'LIQ YANGILANGAN) ==========
+    # ========== TAB 4: METALL TAHLILI ==========
     with tab4:
-        st.markdown("####  Metall karkas detallari")
+        st.markdown("#### Metall karkas detallari")
+        
+        # Hozirgi tanlangan sistemani olish
+        current_system = params.get("construction_system", "LMK (Yengil Metall)")
+        
+        # ===== LMK va LSTK solishtirma jadvali =====
+        st.markdown("### LMK va LSTK konstruksiya turlari")
+        st.caption("Quyidagi jadvalda ikkala konstruksiya turining xususiyatlari ko'rsatilgan")
+        
+        # Jadval ma'lumotlari
+        comparison_data = {
+            "Xususiyat": [
+                "Konstruksiya turi",
+                "Material qalinligi",
+                "Birikma usuli",
+                "Xizmat muddati",
+                "Korroziya himoyasi",
+                "Maksimal oraliq",
+                "Qo'llanilishi",
+                "Afzalliklari",
+                "Kamchiliklari"
+            ],
+            "LMK (Yengil Metall)": [
+                "LMK",
+                "8-40 mm",
+                "Payvandlash yoki boltli",
+                "50+ yil",
+                "Qo'shimcha ishlov kerak",
+                "80 metrgacha",
+                "Katta oraliqli binolar, ko'p qavatli inshootlar, yirik savdo markazlari, ishlab chiqarish sexlari",
+                "Yuqori mustahkamlik, katta oraliqlar, ko'p qavatli qurilish, yong'inga chidamlilik",
+                "Metall sarfi yuqori, o'rnatish vaqti uzoq, korroziyaga qarshi ishlov kerak"
+            ],
+            "LSTK (Yengil Po'lat)": [
+                "LSTK",
+                "0.7-4 mm",
+                "Vintli (samorezlar)",
+                "35-40 yil",
+                "Sinklangan (qo'shimcha ishlovsiz)",
+                "30 metrgacha",
+                "Qishloq xo'jaligi inshootlari, angarlar, omborlar, kichik savdo maydonlari, kam qavatli qurilish",
+                "Korroziyaga chidamli, tez o'rnatiladi, yengil, transport arzon, ekologik toza",
+                "Xizmat muddati qisqaroq, katta oraliqlar uchun mos emas, ko'p qavatli qurilish uchun emas"
+            ]
+        }
+        
+        # DataFrame yaratish
+        df_compare = pd.DataFrame(comparison_data)
+        df_compare = df_compare.set_index('Xususiyat')
+        
+        # Tanlangan variantni rang bilan belgilash (applymap -> map)
+        def highlight_current(val):
+            if current_system in str(val):
+                return 'background-color: #2E7D32; color: white; font-weight: bold'
+            return ''
+        
+        # Jadvalni ko'rsatish - map() ishlatamiz
+        styled_df = df_compare.style.map(highlight_current)
+        st.dataframe(styled_df, use_container_width=True, height=400)
+        
+        st.divider()
+        
+        # ===== TANLANGAN VARIANT HAQIDA QISQA MA'LUMOT =====
+        st.markdown(f"#### Tanlangan: {current_system}")
+        
+        if current_system == "LMK (Yengil Metall)":
+            st.info("""
+            **LMK** - qalin metall prokatdan tayyorlangan konstruksiya.
+            
+            Asosiy xususiyatlar:
+            - Material: 8-40 mm
+            - Birikma: Payvandlash/Bolt
+            - Xizmat muddati: 50+ yil
+            - Maksimal oraliq: 80 m
+            - Qo'llanilishi: Katta oraliqli binolar, ko'p qavatli inshootlar
+            """)
+        else:
+            st.info("""
+            **LSTK** - yupqa sinklangan po'lat profillardan tayyorlangan konstruksiya.
+            
+            Asosiy xususiyatlar:
+            - Material: 0.7-4 mm
+            - Birikma: Vintli (samorezlar)
+            - Xizmat muddati: 35-40 yil
+            - Maksimal oraliq: 30 m
+            - Qo'llanilishi: Angarlar, omborlar, qishloq xo'jaligi inshootlari
+            """)
+        
+        st.divider()
+        
+        # ===== METALL KARKAS DETALLARI =====
+        st.markdown("#### Metall karkas detallari")
         
         col_m1, col_m2, col_m3, col_m4 = st.columns(4)
         
         with col_m1:
-            st.markdown("** Ustunlar (kolonnalar)**")
+            st.markdown("**Ustunlar (kolonnalar)**")
             st.metric("Soni", f"{materials['total_columns']} ta")
             st.metric("Metr", f"{materials['column_meters']:.1f} m")
             st.metric("Og'irlik", f"{materials['column_kg']:.0f} kg")
             st.metric("Tonna", f"{materials['column_tonna']:.3f} t")
             
         with col_m2:
-            st.markdown("** Tosinlar (rigellar)**")
+            st.markdown("**Tosinlar (rigellar)**")
             st.metric("Metr", f"{materials['beam_meters']:.1f} m")
             st.metric("Og'irlik", f"{materials['beam_kg']:.0f} kg")
             st.metric("Tonna", f"{materials['beam_tonna']:.3f} t")
             
         with col_m3:
-            st.markdown("** Fermalar**")
+            st.markdown("**Fermalar**")
             st.metric("Soni", f"{materials['truss_count']} ta")
             st.metric("Metr", f"{materials['truss_meters']:.1f} m")
             st.metric("Og'irlik", f"{materials['truss_kg']:.0f} kg")
             st.metric("Tonna", f"{materials['truss_tonna']:.3f} t")
             
         with col_m4:
-            st.markdown("** Uzunasiga tosinlar**")
+            st.markdown("**Uzunasiga tosinlar**")
             st.metric("Metr", f"{materials['longitudinal_meters']:.1f} m")
             st.metric("Og'irlik", f"{materials['longitudinal_kg']:.0f} kg")
             st.metric("Tonna", f"{materials['longitudinal_tonna']:.3f} t")
@@ -4013,17 +4147,14 @@ def construction_main(params):
         
         col_total1, col_total2, col_total3 = st.columns(3)
         with col_total1:
-            st.metric(" Jami metall", f"{materials['metal_tonna']:.3f} t")
+            st.metric("Jami metall", f"{materials['metal_tonna']:.3f} t")
         with col_total2:
-             st.metric("Karkas narxi", f"${materials['metal_karkas_cost']:,.0f}")
+            st.metric("Karkas narxi", f"${materials['metal_karkas_cost']:,.0f}")
         with col_total3:
             avg_price = materials['metal_karkas_cost'] / materials['metal_tonna'] if materials['metal_tonna'] > 0 else 0
-            st.metric(" 1 tonna o'rtacha narxi", f"${avg_price:.0f}")
+            st.metric("1 tonna o'rtacha narxi", f"${avg_price:.0f}")
         
         # Grafik: metall tarkibi
-        import plotly.express as px
-        import pandas as pd
-        
         metal_df = pd.DataFrame({
             'Element': ['Ustunlar', 'Tosinlar', 'Fermalar', 'Uzunasiga'],
             'Og\'irlik (kg)': [
@@ -4054,7 +4185,6 @@ def construction_main(params):
                               color_discrete_sequence=['#1B5E20', '#2E7D32', '#388E3C', '#43A047'])
             fig_price.update_traces(textposition='inside', textinfo='percent+label')
             st.plotly_chart(fig_price, use_container_width=True)
-
     with tab5:
         st.markdown("####  Tuproq, yuklamalar va konstruktiv chidamlilik")
         st.caption(
@@ -4158,19 +4288,15 @@ def construction_main(params):
         st.divider()
         st.markdown("#### 📥 Chizmalarni Yuklab Olish")
         
-# 3969-qator atrofidagi kod
-# To'g'ri variant - 1: Kolonkalarni dinamik yaratish
-        col_btns = st.columns(4)  # 4 ta ustun yaratamiz
+        col_btns = st.columns(4)
 
         for idx, (name, fig) in enumerate(drawings.items()):
-            # Chizmani PNG formatida saqlash
             buf = io.BytesIO()
             fig.savefig(buf, format='png', dpi=150, bbox_inches='tight', 
                         facecolor=fig.get_facecolor(), edgecolor='none')
             buf.seek(0)
             
-            # Yuklab olish tugmasi - to'g'ri indeks bilan
-            with col_btns[idx % 4]:  # ✅ idx % 4 ishlaydi
+            with col_btns[idx % 4]:
                 st.download_button(
                     f"📥 {name.upper()}",
                     data=buf,
@@ -4205,7 +4331,6 @@ def construction_main(params):
         )
 
     with col_btn2:
-        # Excel formatida yuklash
         try:
             from io import BytesIO
             
@@ -4228,11 +4353,4 @@ def construction_main(params):
                 st.warning("⚠️ Excel yaratish uchun 'openpyxl' kutubxonasi kerak. O'rnatish: pip install openpyxl")
         except Exception as e:
             st.warning(f"Excel yaratishda xatolik: {e}")
-# ========== ASOSIY DASTUR ==========
-if __name__ == "__main__":
-    print("=" * 50)
-    print("PROFESSIONAL ANGAR KONSTRUKSIYASI MODULI")
-    print("=" * 50)
-    print("Streamlit ilova sifatida ishga tushirish:")
-    print("streamlit run construction_module_advanced.py")
-    print("=" * 50)
+    
