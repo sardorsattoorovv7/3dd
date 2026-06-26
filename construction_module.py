@@ -354,23 +354,19 @@ def compute_column_layout(L, W, column_spacing=8.5):
 # compute_metal_quantities funksiyasidan OLDIN qo'shing (taxminan 200-qator atrofida)
 
 def get_construction_system_factors(system_type, L, W, H):
-    """
-    LMK yoki LSTK uchun koeffitsiyentlarni qaytaradi
-    """
-    # 🔽 TO'G'RI TEKSHIRISH
     if system_type == "LSTK (Yengil Po'lat)":
         return {
-            "weight_multiplier": 0.65,
-            "column_kg_m": 18.0,
-            "beam_kg_m": 14.0,
-            "truss_kg_m": 12.0,
-            "bracing_kg_m": 8.0,
+            "weight_multiplier": 1.0,
+            "column_kg_m": 11.62,      # ← GOST 8639-82, Profil 100x100x4 mm
+            "beam_kg_m": 8.52,         # ← GOST 8645-68, Profil 100x50x4 mm
+            "truss_kg_m": 5.25,        # ← GOST 8639-82, Profil 60x60x3 mm
+            "bracing_kg_m": 12.30,     # ← GOST 8240-97, Shveller 14P
             "connection_type": "screwed",
             "max_span": 30,
             "service_life": 35,
             "corrosion_protection": True,
         }
-    else:  # LMK (Yengil Metall)
+    else:  # LMK
         return {
             "weight_multiplier": 1.0,
             "column_kg_m": 32.5,
@@ -386,19 +382,13 @@ def compute_metal_quantities(L, W, H, roof_pitch, column_spacing=8.5, system_typ
     """
     Metall miqdorlarini hisoblash - LMK/LSTK uchun
     """
-    # 🔽 BU QATORNI TEKSHIRING - system_type to'g'ri kelayaptimi?
     factors = get_construction_system_factors(system_type, L, W, H)
-    
-    # 🔽 DEBUG UCHUN (ishlatib ko'ring)
-    # st.write(f"System type: {system_type}")
-    # st.write(f"Factors: {factors}")
     
     pitch_rad = math.radians(roof_pitch)
     layout = compute_column_layout(L, W, column_spacing)
     n_cols_x = layout["n_cols_x"]
     n_cols_z = layout["n_cols_z"]
     prolyot = W
-    
     
     # ===== 1) USTUNLAR =====
     total_columns = (n_cols_x * 2) + (max(0, n_cols_z - 2) * 2)
@@ -416,29 +406,15 @@ def compute_metal_quantities(L, W, H, roof_pitch, column_spacing=8.5, system_typ
     else:
         height_factor = 1.35
     
-    # 🔽 LMK/LSTK ga qarab asosiy og'irlik
-    if prolyot <= 12:
-        base_kg_m = factors["column_kg_m"] * 0.85
-    elif prolyot <= 18:
-        base_kg_m = factors["column_kg_m"] * 0.90
-    elif prolyot <= 24:
-        base_kg_m = factors["column_kg_m"] * 1.0
-    elif prolyot <= 30:
-        base_kg_m = factors["column_kg_m"] * 1.10
-    else:
-        base_kg_m = factors["column_kg_m"] * 1.30
-    
-    # 🔽 LSTK uchun yengilroq
-    if "LSTK" in system_type:
-        base_kg_m = base_kg_m * 0.55  # 45% yengilroq
-    
+    # 🔽 TO'G'RI - factors dan to'g'ridan-to'g'ri olamiz
+    base_kg_m = factors["column_kg_m"]
     column_kg_m = base_kg_m * height_factor
     column_kg = column_meters * column_kg_m
     column_qoshimcha = total_columns * 45 * height_factor * factors["weight_multiplier"]
     
     # ===== 2) TOSINLAR =====
     beam_meters = 2 * (L + W) * 1.5 * factors["weight_multiplier"]
-    beam_kg_m = factors["beam_kg_m"] * (0.6 if "LSTK" in system_type else 1.0)
+    beam_kg_m = factors["beam_kg_m"]  # 🔽 QO'SHIMCHA KOEFFITSIYENT YO'Q
     beam_kg = beam_meters * beam_kg_m
     
     # ===== 3) FERMALAR =====
@@ -450,18 +426,18 @@ def compute_metal_quantities(L, W, H, roof_pitch, column_spacing=8.5, system_typ
         truss_length = W
     
     if prolyot <= 12:
-        truss_mult = 1.8 * factors["weight_multiplier"]
+        truss_mult = 1.8
     elif prolyot <= 18:
-        truss_mult = 2.0 * factors["weight_multiplier"]
+        truss_mult = 2.0
     elif prolyot <= 25:
-        truss_mult = 2.2 * factors["weight_multiplier"]
+        truss_mult = 2.2
     elif prolyot <= 30:
-        truss_mult = 2.4 * factors["weight_multiplier"]
+        truss_mult = 2.4
     else:
-        truss_mult = 2.6 * factors["weight_multiplier"]
+        truss_mult = 2.6
     
     truss_meters = truss_count * truss_length * truss_mult
-    truss_kg_m = factors["truss_kg_m"] * (0.6 if "LSTK" in system_type else 1.0)
+    truss_kg_m = factors["truss_kg_m"]  # 🔽 QO'SHIMCHA KOEFFITSIYENT YO'Q
     truss_kg = truss_meters * truss_kg_m
     truss_qoshimcha = truss_count * 60 * factors["weight_multiplier"]
     
@@ -478,7 +454,7 @@ def compute_metal_quantities(L, W, H, roof_pitch, column_spacing=8.5, system_typ
     seysmik_m = (L + W) * 0.4 * factors["weight_multiplier"]
     
     jami_boglamalar_m = vert_bog_m + goriz_bog_m + seysmik_m
-    bog_kg_m = factors["bracing_kg_m"] * (0.6 if "LSTK" in system_type else 1.0)
+    bog_kg_m = factors["bracing_kg_m"]  # 🔽 QO'SHIMCHA KOEFFITSIYENT YO'Q
     jami_boglamalar_kg = jami_boglamalar_m * bog_kg_m
     
     # ===== 6) ASOSIY METALL =====
@@ -487,9 +463,9 @@ def compute_metal_quantities(L, W, H, roof_pitch, column_spacing=8.5, system_typ
     
     # ===== 7) BIRIKMA DETALLARI =====
     if "LSTK" in system_type:
-        birikma_k = 0.02  # Vintli birikma - kamroq
+        birikma_k = 0.02
     else:
-        birikma_k = 0.04  # Payvandlash - ko'proq
+        birikma_k = 0.04
     
     birikma_kg = asosiy_metal_kg * birikma_k
     
@@ -525,7 +501,6 @@ def compute_metal_quantities(L, W, H, roof_pitch, column_spacing=8.5, system_typ
         "connection_type": factors["connection_type"],
         "corrosion_protection": factors["corrosion_protection"],
     }
-# ============================================================
 # 1. PROFIL TANLASH FUNKSIYASI - compute_metal_quantities funksiyasidan OLDIN qo'shiladi
 # ============================================================
 
