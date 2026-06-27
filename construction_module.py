@@ -354,17 +354,34 @@ def compute_column_layout(L, W, column_spacing=8.5):
 # compute_metal_quantities funksiyasidan OLDIN qo'shing (taxminan 200-qator atrofida)
 
 def get_construction_system_factors(system_type, L, W, H):
+    """Konstruksiya turiga qarab koeffitsiyentlar"""
+    
     if system_type == "LSTK (Yengil Po'lat)":
+        if system_type == "LSTK (Yengil Po'lat)":
+            return {
+                "weight_multiplier": 1.0,
+                "column_kg_m": 11.62,      # ← GOST 8639-82, Profil 100x100x4 mm
+                "beam_kg_m": 8.52,         # ← GOST 8645-68, Profil 100x50x4 mm
+                "truss_kg_m": 5.25,        # ← GOST 8639-82, Profil 60x60x3 mm
+                "bracing_kg_m": 12.30,     # ← GOST 8240-97, Shveller 14P
+                "connection_type": "screwed",
+                "max_span": 30,
+                "service_life": 35,
+                "corrosion_protection": True,
+            }
+    elif system_type == "OG'IR METALL (Heavy Steel)":
         return {
-            "weight_multiplier": 1.0,
-            "column_kg_m": 11.62,      # ← GOST 8639-82, Profil 100x100x4 mm
-            "beam_kg_m": 8.52,         # ← GOST 8645-68, Profil 100x50x4 mm
-            "truss_kg_m": 5.25,        # ← GOST 8639-82, Profil 60x60x3 mm
-            "bracing_kg_m": 12.30,     # ← GOST 8240-97, Shveller 14P
-            "connection_type": "screwed",
-            "max_span": 30,
-            "service_life": 35,
-            "corrosion_protection": True,
+            "weight_multiplier": 1.3,   # LMK dan 1.3 baravar og'ir
+            "column_kg_m": 50.0,        # H-tavr 300x300 (o'rtacha og'ir)
+            "beam_kg_m": 40.0,          # H-tavr 250x250
+            "truss_kg_m": 28.0,         # Qalin truss
+            "bracing_kg_m": 20.0,       # Kanal 24P
+            "connection_type": "welded",
+            "max_span": 90,
+            "service_life": 50,
+            "corrosion_protection": False,
+            "weight_kg_m2": 40,         # 1 m² ga metall (o'rtacha og'ir)
+            "price_factor": 1.25,       # Narx 1.25 baravar
         }
     else:  # LMK
         return {
@@ -378,6 +395,7 @@ def get_construction_system_factors(system_type, L, W, H):
             "service_life": 50,
             "corrosion_protection": False,
         }
+
 def compute_metal_quantities(L, W, H, roof_pitch, column_spacing=8.5, system_type="LMK (Yengil Metall)"):
     """
     Metall miqdorlarini hisoblash - LMK/LSTK uchun
@@ -3496,8 +3514,8 @@ def construction_sidebar():
     with st.sidebar.expander("Asosiy olchamlar", expanded=True):
         col1, col2 = st.columns(2)
         with col1:
-            L = st.number_input("Uzunlik (m)", min_value=5.0, value=30.0, step=1.0, key="cons_L")
-            H = st.number_input("Balandlik (m)", min_value=3.0, value=7.5, step=0.5, key="cons_H")
+            L = st.number_input("Uzunlik (m)", min_value=0.0, value=30.0, step=1.0, key="cons_L")
+            H = st.number_input("Balandlik (m)", min_value=0.0, value=7.5, step=0.5, key="cons_H")
         with col2:
             W = st.number_input("Kenglik (m)", min_value=5.0, value=15.0, step=1.0, key="cons_W")
             roof_pitch = st.slider("Tom qiyaligi (gradus)", 0.0, 45.0, 12.0, 1.0, key="cons_roof_pitch")
@@ -3555,20 +3573,25 @@ def construction_sidebar():
             st.caption(f"Bog'lamalar: {bracing_profile} ({get_profile_weight('bracing', bracing_profile)} kg/m)")
         # construction_sidebar() funksiyasiga qo'shing (taxminan 2200-qator atrofida)
 
-        with st.sidebar.expander("Konstruksiya turi", expanded=True):
-            construction_system = st.radio(
-                "Metall karkas turi",
-                options=["LMK (Yengil Metall)", "LSTK (Yengil Po'lat)"],
-                index=0,
-                key="construction_system",
-                help="""
-                **LMK**: Qalin metall (8-40mm), payvandlash/boltlar, katta oraliqli binolar
-                **LSTK**: Yupqa sinklangan po'lat (0.7-4mm), vintli birikma, angar/omborlar
-                """
-            )
-            
-            # 🔽 BU QISMNI QO'SHING - tanlangan variantni ko'rsatish
-            st.write(f"Tanlangan: **{construction_system}**")
+    # construction_sidebar() funksiyasida (taxminan 2200-qator)
+    with st.sidebar.expander("Konstruksiya turi", expanded=True):
+        construction_system = st.radio(
+            "Metall karkas turi",
+            options=[
+                "LSTK (Yengil Po'lat)",
+                "LMK (Yengil Metall)", 
+                "OG'IR METALL (Heavy Steel)"  # 🔽 YANGI
+            ],
+            index=1,  # LMK standart
+            key="construction_system",
+            help="""
+            **LSTK**: Yupqa sinklangan po'lat (0.7-4mm), vintli birikma, angar/omborlar
+            **LMK**: Qalin metall (8-40mm), payvandlash/boltlar, katta oraliqli binolar
+            **OG'IR METALL**: Qalin H-tavrli profillar (10-60mm), og'ir kranlar va sanoat binolari uchun
+            """
+    )
+    
+
          
     with st.sidebar.expander("Derazalar (har devor uchun)", expanded=False):
         st.caption("Old fasad (darvozalar tomon)")
@@ -4007,7 +4030,6 @@ def construction_main(params):
         st.markdown("### LMK va LSTK konstruksiya turlari")
         st.caption("Quyidagi jadvalda ikkala konstruksiya turining xususiyatlari ko'rsatilgan")
         
-        # Jadval ma'lumotlari
         comparison_data = {
             "Xususiyat": [
                 "Konstruksiya turi",
@@ -4015,26 +4037,41 @@ def construction_main(params):
                 "Birikma usuli",
                 "Xizmat muddati",
                 "Korroziya himoyasi",
-                "Maksimal oraliq"
+                "Maksimal oraliq",
+                "1 m² ga metall",
+                "Yuk ko'tarish"
+            ],
+            "LSTK (Yengil Po'lat)": [
+                "LSTK",
+                "0.7-4 mm",
+                "Vintli (samorezlar)",
+                "35-40 yil",
+                "Sinklangan",
+                "30 metrgacha",
+                "15-25 kg/m²",
+                "Yengil (≤3 kN/m²)"
             ],
             "LMK (Yengil Metall)": [
                 "LMK",
                 "8-40 mm",
                 "Payvandlash/Bolt",
                 "50+ yil",
-                "Qoshimcha ishlov kerak",
-                "80 metrgacha"
+                "Qo'shimcha ishlov kerak",
+                "80 metrgacha",
+                "25-45 kg/m²",
+                "O'rtacha (≤5 kN/m²)"
             ],
-            "LSTK (Yengil Polat)": [
-                "LSTK",
-                "0.7-4 mm",
-                "Vintli (samorezlar)",
-                "35-40 yil",
-                "Sinklangan",
-                "30 metrgacha"
+            "OG'IR METALL (Heavy Steel)": [
+                "OG'IR",
+                "10-60 mm",
+                "Payvandlash",
+                "50+ yil",
+                "Maxsus qoplama",
+                "100 metrgacha",
+                "60-90 kg/m²",
+                "Og'ir (≥10 kN/m²)"
             ]
         }
-        
         # DataFrame yaratish
         df_compare = pd.DataFrame(comparison_data)
         df_compare = df_compare.set_index('Xususiyat')
