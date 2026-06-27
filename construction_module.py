@@ -3802,7 +3802,6 @@ def construction_main(params):
     - Oraliq: {column_spacing:.1f} m
     - Uzunlik bo'ylab: {layout['n_cols_x']} ta
     - Kenglik bo'ylab: {layout['n_cols_z']} ta
-    - Jami ustunlar: {layout['n_cols_x'] * layout['n_cols_z']} ta
     - Fermalar: {layout['n_cols_x']} ta
     """)
     
