@@ -406,7 +406,6 @@ def compute_metal_quantities(L, W, H, roof_pitch, column_spacing=8.5, system_typ
     else:
         height_factor = 1.35
     
-    # 🔽 TO'G'RI - factors dan to'g'ridan-to'g'ri olamiz
     base_kg_m = factors["column_kg_m"]
     column_kg_m = base_kg_m * height_factor
     column_kg = column_meters * column_kg_m
@@ -414,7 +413,7 @@ def compute_metal_quantities(L, W, H, roof_pitch, column_spacing=8.5, system_typ
     
     # ===== 2) TOSINLAR =====
     beam_meters = 2 * (L + W) * 1.5 * factors["weight_multiplier"]
-    beam_kg_m = factors["beam_kg_m"]  # 🔽 QO'SHIMCHA KOEFFITSIYENT YO'Q
+    beam_kg_m = factors["beam_kg_m"]
     beam_kg = beam_meters * beam_kg_m
     
     # ===== 3) FERMALAR =====
@@ -437,11 +436,12 @@ def compute_metal_quantities(L, W, H, roof_pitch, column_spacing=8.5, system_typ
         truss_mult = 2.6
     
     truss_meters = truss_count * truss_length * truss_mult
-    truss_kg_m = factors["truss_kg_m"]  # 🔽 QO'SHIMCHA KOEFFITSIYENT YO'Q
+    truss_kg_m = factors["truss_kg_m"]
     truss_kg = truss_meters * truss_kg_m
     truss_qoshimcha = truss_count * 60 * factors["weight_multiplier"]
     
     # ===== 4) PROGONLAR =====
+    # ✅ Tuzatish: purlin_result ni hisoblaymiz va materials ga qo'shamiz
     purlin_result = compute_purlins(L, W, H, roof_pitch, 
                                    system_type=system_type,
                                    factors=factors)
@@ -454,7 +454,7 @@ def compute_metal_quantities(L, W, H, roof_pitch, column_spacing=8.5, system_typ
     seysmik_m = (L + W) * 0.4 * factors["weight_multiplier"]
     
     jami_boglamalar_m = vert_bog_m + goriz_bog_m + seysmik_m
-    bog_kg_m = factors["bracing_kg_m"]  # 🔽 QO'SHIMCHA KOEFFITSIYENT YO'Q
+    bog_kg_m = factors["bracing_kg_m"]
     jami_boglamalar_kg = jami_boglamalar_m * bog_kg_m
     
     # ===== 6) ASOSIY METALL =====
@@ -487,6 +487,9 @@ def compute_metal_quantities(L, W, H, roof_pitch, column_spacing=8.5, system_typ
         "longitudinal_meters": round(longitudinal_meters, 1),
         "longitudinal_kg": round(longitudinal_kg, 1),
         "longitudinal_tonna": round(longitudinal_kg / 1000, 3),
+        # ✅ Qo'shimcha: purlin ma'lumotlarini ham qaytaramiz
+        "purlins_total_kg": round(longitudinal_kg, 1),
+        "purlins_total_tonna": round(longitudinal_kg / 1000, 3),
         "boglamalar_kg": round(jami_boglamalar_kg, 1),
         "boglamalar_tonna": round(jami_boglamalar_kg / 1000, 3),
         "birikma_kg": round(birikma_kg, 1),
@@ -501,7 +504,6 @@ def compute_metal_quantities(L, W, H, roof_pitch, column_spacing=8.5, system_typ
         "connection_type": factors["connection_type"],
         "corrosion_protection": factors["corrosion_protection"],
     }
-# 1. PROFIL TANLASH FUNKSIYASI - compute_metal_quantities funksiyasidan OLDIN qo'shiladi
 # ============================================================
 
 def select_optimal_profile(load_kg, span_m, height_m, profile_type="column"):
@@ -2651,178 +2653,154 @@ def compute_bracing(L, W, H, seismic_zone, wind_region="B"):
 
 
 def compute_connections(metal_kg, connection_type="mixed"):
-    """
-    SNiP II-23-81 bo'yicha birikma detallari
-    """
     coefficients = {
         "bolted": {"default": 0.065},
         "welded": {"default": 0.05},
         "mixed": {"default": 0.08}
     }
-    
     coeff = coefficients.get(connection_type, coefficients["mixed"])
     weight_kg = metal_kg * coeff["default"]
     
-    details_count = {
-        "bolts": int(metal_kg / 500),
-        "plates": int(metal_kg / 1000) + 1,
-        "welds_m": int(metal_kg / 200)
-    }
+    # 🔽 DEBUG
+    print(f"compute_connections: metal_kg={metal_kg}, coeff={coeff['default']}, weight_kg={weight_kg}")
     
     return {
         "type": connection_type,
         "coefficient": coeff["default"],
         "weight_kg": round(weight_kg, 1),
         "weight_tonna": round(weight_kg / 1000, 3),
-        "details": details_count
+        "details": {
+            "bolts": int(metal_kg / 500),
+            "plates": int(metal_kg / 1000) + 1,
+            "welds_m": int(metal_kg / 200)
+        }
     }
-
 def calculate_advanced_materials(params):
-    """Qo'shimcha hisob-kitoblar bilan (seysmik, muhandislik, progonlar, bog'lamalar, birikmalar)"""
-    materials = calculate_construction_materials(params)
-    
-    # ===== 1. PROGONLAR (PURLINS) HISOBI =====
+    """
+    Kengaytirilgan materiallar hisobi - barcha konstruktiv elementlarni o'z ichiga oladi
+    """
+    # ===== 1. ASOSIY MA'LUMOTLARNI O'QIB OLAMIZ =====
     L = params.get("L", 30)
     W = params.get("W", 15)
     H = params.get("H", 7.5)
     roof_pitch = params.get("roof_pitch", 12)
-    column_spacing = params.get("column_spacing", 8.5)
+    system_type = params.get("construction_system", "LMK (Yengil Metall)")
     
-    # Profil ma'lumotlarini olish
-    purlin_profile = params.get("purlin_profile", "Profil 120x60x4 mm")
-    wall_purlin_profile = params.get("wall_purlin_profile", "Profil 100x50x4 mm")
-    bracing_profile = params.get("bracing_profile", "Shveller 14P")
+    # ===== 2. ASOSIY HISOB (calculate_construction_materials) =====
+    materials = calculate_construction_materials(params)
     
-    # Profillarni uzatish
-    purlins = compute_purlins(
-        L, W, H, roof_pitch,
-        purlin_profile=purlin_profile,
-        wall_purlin_profile=wall_purlin_profile,
-        bracing_profile=bracing_profile
-    )
+    # ===== 3. PROGONLAR (PURLINS) HISOBI =====
+    # Progonlar compute_metal_quantities ichida hisoblangan
+    # Uni qayta hisoblamaymiz, materials dan olamiz
     
-    # Progon ma'lumotlarini materials ga qo'shish
-    materials["purlins_wall_m"] = purlins["wall_purlins_m"]
-    materials["purlins_roof_m"] = purlins["roof_purlins_m"]
-    materials["purlins_total_m"] = purlins["total_m"]
-    materials["purlins_wall_kg"] = purlins["wall_purlins_kg"]
-    materials["purlins_roof_kg"] = purlins["roof_purlins_kg"]
-    materials["purlins_total_kg"] = purlins["total_kg"]
-    materials["purlins_total_tonna"] = purlins["total_tonna"]
+    # ===== 4. BOG'LAMALAR (BRACING) HISOBI =====
+    # ✅ TUZATISH: materials dan mavjud qiymatni olamiz
+    # compute_metal_quantities da hisoblangan bog'lamalar
+    if "boglamalar_kg" in materials:
+        materials["bracing_kg"] = materials["boglamalar_kg"]
+        materials["bracing_tonna"] = materials["boglamalar_tonna"]
+    else:
+        # Faqat mavjud bo'lmasa hisoblaymiz
+        seismic_zone = params.get("seismic_zone", 8)
+        wind_region = params.get("wind_region", "B")
+        bracing = compute_bracing(L, W, H, seismic_zone, wind_region)
+        materials["bracing_kg"] = bracing["total_kg"]
+        materials["bracing_tonna"] = bracing["total_tonna"]
     
-    # Profil ma'lumotlari
-    materials["purlin_profile"] = purlin_profile
-    materials["purlin_kg_m"] = purlins["purlin_kg_m"]
-    materials["wall_purlin_profile"] = wall_purlin_profile
-    materials["wall_purlin_kg_m"] = purlins["wall_purlin_kg_m"]
-    materials["bracing_profile"] = bracing_profile
-    materials["bracing_kg_m"] = purlins["bracing_kg_m"]
+    # ===== 5. BIRIKMA DETALLARI (CONNECTIONS) HISOBI =====
+    # ✅ TUZATISH: materials dan mavjud qiymatni olamiz
+    # compute_metal_quantities da hisoblangan birikmalar
+    if "birikma_kg" in materials:
+        materials["connection_kg"] = materials["birikma_kg"]
+        materials["connection_tonna"] = materials["birikma_tonna"]
+    else:
+        # Faqat mavjud bo'lmasa hisoblaymiz
+        total_metal_for_connections = (
+            materials["column_kg"] +
+            materials["beam_kg"] +
+            materials["truss_kg"] +
+            materials.get("purlins_total_kg", materials.get("longitudinal_kg", 0)) +
+            materials.get("bracing_kg", 0)
+        )
+        connection_type = params.get("connection_type", "mixed")
+        connections = compute_connections(total_metal_for_connections, connection_type)
+        materials["connection_kg"] = connections["weight_kg"]
+        materials["connection_tonna"] = connections["weight_tonna"]
     
-    # Progonlar narxi (1 tonna uchun)
-    purlin_price_per_ton = params.get("price_metal_purlins", 950)
-    purlins_cost = purlins["total_tonna"] * purlin_price_per_ton
-    materials["purlins_cost"] = round(purlins_cost)
+    # ===== 6. PROGON MA'LUMOTLARINI TO'LDIRISH =====
+    # ✅ TUZATISH: longitudinal_kg dan purlins_total_kg ga o'tkazamiz
+    materials["purlins_total_kg"] = materials.get("longitudinal_kg", 0)
+    materials["purlins_total_tonna"] = materials.get("longitudinal_tonna", 0)
     
-    # ===== 2. BOG'LAMALAR (BRACING) HISOBI =====
-    seismic_zone = params.get("seismic_zone", 8)
-    wind_region = params.get("wind_region", "B")
+    # ===== 7. JAMI METALL OG'IRLIK =====
+    # ✅ TUZATISH: Faqat bir marta hisoblaymiz
+    # compute_metal_quantities da hisoblangan total_metal_kg dan olamiz
+    materials["metal_kg"] = materials.get("total_metal_kg", 0)
+    materials["metal_tonna"] = materials.get("total_metal_tonna", 0)
     
-    bracing = compute_bracing(L, W, H, seismic_zone, wind_region)
-    materials["bracing_horizontal_m"] = bracing["horizontal_m"]
-    materials["bracing_vertical_m"] = bracing["vertical_m"]
-    materials["bracing_seismic_m"] = bracing["seismic_m"]
-    materials["bracing_diagonal_m"] = bracing["diagonal_m"]
-    materials["bracing_total_m"] = bracing["total_m"]
-    materials["bracing_kg"] = bracing["total_kg"]
-    materials["bracing_tonna"] = bracing["total_tonna"]
+    # Agar total_metal_kg mavjud bo'lmasa, qo'lda hisoblaymiz
+    if materials["metal_kg"] == 0:
+        materials["metal_kg"] = (
+            materials["column_kg"] +
+            materials["beam_kg"] +
+            materials["truss_kg"] +
+            materials["purlins_total_kg"] +
+            materials["bracing_kg"] +
+            materials["connection_kg"]
+        )
+        materials["metal_tonna"] = round(materials["metal_kg"] / 1000, 3)
     
-    # Bog'lamalar narxi (1 tonna uchun)
-    bracing_price_per_ton = params.get("price_metal_bracing", 950)
-    bracing_cost = bracing["total_tonna"] * bracing_price_per_ton
-    materials["bracing_cost"] = round(bracing_cost)
+    # ===== 8. NARXLAR =====
+    price_column = params.get("price_metal_column", 950)
+    price_beam = params.get("price_metal_beam", 950)
+    price_truss = params.get("price_metal_truss", 950)
+    price_purlins = params.get("price_metal_purlins", 950)
+    price_bracing = params.get("price_metal_bracing", 950)
+    price_connection = params.get("price_metal_connection", 950)
     
-    # ===== 3. ORIGINAL METALLNI SAQLASH =====
-    # Asosiy metall (progonsiz) ni saqlab qolamiz
-    materials["metal_tonna_original"] = materials.get("metal_tonna_original", materials["metal_tonna"])
-    materials["metal_kg_original"] = materials.get("metal_kg_original", materials["metal_kg"])
+    materials["column_cost"] = round(materials["column_tonna"] * price_column)
+    materials["beam_cost"] = round(materials["beam_tonna"] * price_beam)
+    materials["truss_cost"] = round(materials["truss_tonna"] * price_truss)
+    materials["purlins_cost"] = round(materials["purlins_total_tonna"] * price_purlins)
+    materials["bracing_cost"] = round(materials["bracing_tonna"] * price_bracing)
+    materials["connection_cost"] = round(materials["connection_tonna"] * price_connection)
     
-    # ===== 4. BIRIKMA DETALLARI (CONNECTIONS) HISOBI =====
-    # 🔽 ORIGINAL METALL + PROGONLAR + BOG'LAMALAR (YANGI MATERIALS["METAL_KG"] EMAS!)
-    total_metal_for_connections = (
-        materials["metal_kg_original"] +   # 🔽 ORIGINAL (progonsiz)
-        purlins["total_kg"] + 
-        bracing["total_kg"]
-    )
-    
-    connection_type = params.get("connection_type", "mixed")
-    connections = compute_connections(total_metal_for_connections, connection_type)
-    materials["connection_type"] = connection_type
-    materials["connection_coefficient"] = connections["coefficient"]
-    materials["connection_kg"] = connections["weight_kg"]
-    materials["connection_tonna"] = connections["weight_tonna"]
-    materials["connection_bolts"] = connections["details"]["bolts"]
-    materials["connection_plates"] = connections["details"]["plates"]
-    materials["connection_welds_m"] = connections["details"]["welds_m"]
-    
-    # Birikma detallari narxi (1 tonna uchun)
-    connection_price_per_ton = params.get("price_metal_connection", 950)
-    connection_cost = connections["weight_tonna"] * connection_price_per_ton
-    materials["connection_cost"] = round(connection_cost)
-    
-    # ===== 5. JAMI METALL (PROGONLAR BILAN BIRGA) =====
-    # 🔽 MUHIM: ORIGINAL + PROGONLAR + BOG'LAMALAR + BIRIKMALAR
-    materials["metal_kg_with_purlins"] = (
-        materials["metal_kg_original"] + 
-        purlins["total_kg"] + 
-        bracing["total_kg"] + 
-        connections["weight_kg"]
-    )
-    materials["metal_tonna_with_purlins"] = round(
-        materials["metal_kg_with_purlins"] / 1000, 3
-    )
-    
-    # 🔽 Asosiy ko'rsatkichda ko'rsatiladigan metall tonnaji (YANGILANDI)
-    materials["metal_kg"] = materials["metal_kg_with_purlins"]
-    materials["metal_tonna"] = materials["metal_tonna_with_purlins"]
-    
-    # ===== 6. YANGILANGAN METALL KARKAS NARXI =====
-    # Eski metall narxiga progonlar, bog'lamalar va birikmalarni qo'shamiz
-    updated_metal_karkas_cost = (
-        materials["metal_karkas_cost"] + 
+    materials["metal_karkas_cost"] = round(
+        materials["column_cost"] + 
+        materials["beam_cost"] + 
+        materials["truss_cost"] + 
         materials["purlins_cost"] + 
         materials["bracing_cost"] + 
         materials["connection_cost"]
     )
-    materials["updated_metal_karkas_cost"] = round(updated_metal_karkas_cost)
-    materials["metal_karkas_cost"] = round(updated_metal_karkas_cost)
     
-    # ===== 7. SEYSiMIK QO'SHIMCHA =====
-    seismic_factors = {7: 0.1, 8: 0.2, 9: 0.3}
-    seismic_factor = seismic_factors.get(seismic_zone, 0.15)
-    seismic_extra_cost = materials["metal_karkas_cost"] * seismic_factor
-    materials["seismic_extra_cost"] = round(seismic_extra_cost)
+    # ===== 9. SEYSiMIK QO'SHIMCHA =====
+    seismic_zone = params.get("seismic_zone", 8)
+    seismic_factors = {7: 0.05, 8: 0.10, 9: 0.15}
+    seismic_factor = seismic_factors.get(seismic_zone, 0.10)
+    materials["seismic_extra_cost"] = round(materials["metal_karkas_cost"] * seismic_factor)
     materials["seismic_factor"] = seismic_factor
     
-    # ===== 8. MUHANDISLIK TIZIMLARI =====
+    # ===== 10. MUHANDISLIK TIZIMLARI =====
     engineering_cost = 0
     engineering_details = {}
     
-    if params.get("heating") != "Yoq":
+    if params.get("heating") and params.get("heating") != "Yoq":
         heating_cost = materials["floor_area_m2"] * 25
         engineering_cost += heating_cost
         engineering_details["heating"] = round(heating_cost)
     
-    if params.get("ventilation") != "Tabiiy":
+    if params.get("ventilation") and params.get("ventilation") != "Tabiiy":
         ventilation_cost = materials["floor_area_m2"] * 15
         engineering_cost += ventilation_cost
         engineering_details["ventilation"] = round(ventilation_cost)
     
-    if params.get("electricity") != "Standart":
+    if params.get("electricity") and params.get("electricity") != "Standart":
         electricity_cost = materials["floor_area_m2"] * 20
         engineering_cost += electricity_cost
         engineering_details["electricity"] = round(electricity_cost)
     
-    if params.get("plumbing") != "Yoq":
+    if params.get("plumbing") and params.get("plumbing") != "Yoq":
         plumbing_cost = materials["floor_area_m2"] * 18
         engineering_cost += plumbing_cost
         engineering_details["plumbing"] = round(plumbing_cost)
@@ -2830,52 +2808,74 @@ def calculate_advanced_materials(params):
     materials["engineering_systems_cost"] = round(engineering_cost)
     materials["engineering_details"] = engineering_details
     
-    # ===== 9. YANGILANGAN MATERIAL TOTAL =====
-    updated_material_total = (
-        materials["material_total"] + 
-        materials["purlins_cost"] + 
-        materials["bracing_cost"] + 
-        materials["connection_cost"]
+    # ===== 11. MATERIALLAR UMUMIY NARXI =====
+    materials["material_total"] = round(
+        materials["metal_karkas_cost"] +
+        materials["wall_cost"] +
+        materials["gable_wall_cost"] +
+        materials["roof_cost"] +
+        materials["floor_cost"] +
+        materials["window_cost"] +
+        materials["door_cost"] +
+        materials["concrete_cost"] +
+        materials["rebar_cost"] +
+        materials["cement_cost"] +
+        materials["sand_cost"] +
+        materials["gravel_cost"] +
+        materials["shipyak_cost"]
     )
-    materials["updated_material_total"] = round(updated_material_total)
-    materials["material_total"] = round(updated_material_total)
     
-    # ===== 10. JAMI HISOB =====
-    optimized_total = (
+    # ===== 12. ISHCHI KUCHI =====
+    labor_percent = params.get("labor_percent", 32)
+    materials["labor_cost"] = round(materials["material_total"] * (labor_percent / 100))
+    materials["labor_percent"] = labor_percent
+    
+    # ===== 13. UMUMIY QURILISH NARXI =====
+    materials["optimized_total"] = round(
         materials["material_total"] + 
         materials["labor_cost"] + 
-        seismic_extra_cost + 
-        engineering_cost
+        materials["seismic_extra_cost"] + 
+        materials["engineering_systems_cost"]
     )
-    materials["optimized_total"] = round(optimized_total)
+    
+    # ===== 14. 1 m² NARXI =====
+    floor_area = materials.get("floor_area_m2", L * W)
     materials["cost_per_m2"] = round(
-        optimized_total / materials["floor_area_m2"], 1
-    ) if materials["floor_area_m2"] > 0 else 0
+        materials["optimized_total"] / floor_area, 1
+    ) if floor_area > 0 else 0
     
-    # ===== 11. QO'SHIMCHA METRIK MA'LUMOTLAR =====
-    materials["total_metal_with_purlins_kg"] = materials["metal_kg_with_purlins"]
-    materials["total_metal_with_purlins_tonna"] = materials["metal_tonna_with_purlins"]
-    
-    # ===== 12. XULOSA MA'LUMOTLARI =====
+    # ===== 15. XULOSAVIY JADVAL =====
     materials["summary"] = {
-        "asosiy_metall_tonna": materials["metal_tonna_original"],
-        "progonlar_tonna": purlins["total_tonna"],
-        "boglamalar_tonna": bracing["total_tonna"],
-        "birikmalar_tonna": connections["weight_tonna"],
+        # Metall konstruksiya
+        "ustunlar_tonna": materials["column_tonna"],
+        "tosinlar_tonna": materials["beam_tonna"],
+        "fermalar_tonna": materials["truss_tonna"],
+        "progonlar_tonna": materials["purlins_total_tonna"],
+        "boglamalar_tonna": materials["bracing_tonna"],
+        "birikmalar_tonna": materials["connection_tonna"],
         "jami_metall_tonna": materials["metal_tonna"],
+        
+        # Maydonlar
+        "umumiy_maydon_m2": floor_area,
+        "devor_maydoni_m2": materials.get("wall_area_m2", 0),
+        "tom_maydoni_m2": materials.get("roof_area_m2", 0),
+        "pol_maydoni_m2": materials.get("floor_area_m2", 0),
+        
+        # Narxlar
         "materiallar_narxi": materials["material_total"],
         "ishchi_kuchi_narxi": materials["labor_cost"],
-        "seysmik_qoshimcha": seismic_extra_cost,
-        "muhandislik_narxi": engineering_cost,
-        "jami_narx": optimized_total,
-        "1m2_narxi": materials["cost_per_m2"]
+        "seysmik_qoshimcha": materials["seismic_extra_cost"],
+        "muhandislik_narxi": materials["engineering_systems_cost"],
+        "jami_narx": materials["optimized_total"],
+        "1m2_narxi": materials["cost_per_m2"],
+        
+        # Konstruksiya
+        "konstruksiya_turi": system_type,
+        "birikma_turi": materials.get("connection_type", "mixed"),
+        "seysmik_zona": seismic_zone,
     }
     
     return materials
-
-
-
-
 
 
 
@@ -3804,7 +3804,9 @@ def construction_main(params):
     - Kenglik bo'ylab: {layout['n_cols_z']} ta
     - Fermalar: {layout['n_cols_x']} ta
     """)
+
     
+
     # 🔽 MUHIM: column_spacing ni uzatamiz!
     html_3d = create_construction_3d(
         params["L"], params["W"], params["H"], params["roof_pitch"],
@@ -3994,7 +3996,7 @@ def construction_main(params):
             """, unsafe_allow_html=True)
 
     # ========== TAB 4: METALL TAHLILI (TO'LIQ YANGILANGAN) ==========
-    # ========== TAB 4: METALL TAHLILI ==========
+    # ========== TAB 4: METALL TAHLILI (TO'LIQ QAYTA YOZILGAN) ==========
     with tab4:
         st.markdown("#### Metall karkas detallari")
         
@@ -4013,32 +4015,23 @@ def construction_main(params):
                 "Birikma usuli",
                 "Xizmat muddati",
                 "Korroziya himoyasi",
-                "Maksimal oraliq",
-                "Qo'llanilishi",
-                "Afzalliklari",
-                "Kamchiliklari"
+                "Maksimal oraliq"
             ],
             "LMK (Yengil Metall)": [
                 "LMK",
                 "8-40 mm",
-                "Payvandlash yoki boltli",
+                "Payvandlash/Bolt",
                 "50+ yil",
-                "Qo'shimcha ishlov kerak",
-                "80 metrgacha",
-                "Katta oraliqli binolar, ko'p qavatli inshootlar, yirik savdo markazlari, ishlab chiqarish sexlari",
-                "Yuqori mustahkamlik, katta oraliqlar, ko'p qavatli qurilish, yong'inga chidamlilik",
-                "Metall sarfi yuqori, o'rnatish vaqti uzoq, korroziyaga qarshi ishlov kerak"
+                "Qoshimcha ishlov kerak",
+                "80 metrgacha"
             ],
-            "LSTK (Yengil Po'lat)": [
+            "LSTK (Yengil Polat)": [
                 "LSTK",
                 "0.7-4 mm",
                 "Vintli (samorezlar)",
                 "35-40 yil",
-                "Sinklangan (qo'shimcha ishlovsiz)",
-                "30 metrgacha",
-                "Qishloq xo'jaligi inshootlari, angarlar, omborlar, kichik savdo maydonlari, kam qavatli qurilish",
-                "Korroziyaga chidamli, tez o'rnatiladi, yengil, transport arzon, ekologik toza",
-                "Xizmat muddati qisqaroq, katta oraliqlar uchun mos emas, ko'p qavatli qurilish uchun emas"
+                "Sinklangan",
+                "30 metrgacha"
             ]
         }
         
@@ -4046,15 +4039,14 @@ def construction_main(params):
         df_compare = pd.DataFrame(comparison_data)
         df_compare = df_compare.set_index('Xususiyat')
         
-        # Tanlangan variantni rang bilan belgilash (applymap -> map)
+        # Tanlangan variantni rang bilan belgilash
         def highlight_current(val):
             if current_system in str(val):
                 return 'background-color: #2E7D32; color: white; font-weight: bold'
             return ''
         
-        # Jadvalni ko'rsatish - map() ishlatamiz
         styled_df = df_compare.style.map(highlight_current)
-        st.dataframe(styled_df, use_container_width=True, height=400)
+        st.dataframe(styled_df, use_container_width=True, height=250)
         
         st.divider()
         
@@ -4063,102 +4055,213 @@ def construction_main(params):
         
         if current_system == "LMK (Yengil Metall)":
             st.info("""
-            **LMK** - qalin metall prokatdan tayyorlangan konstruksiya.
-            
-            Asosiy xususiyatlar:
-            - Material: 8-40 mm
-            - Birikma: Payvandlash/Bolt
-            - Xizmat muddati: 50+ yil
-            - Maksimal oraliq: 80 m
-            - Qo'llanilishi: Katta oraliqli binolar, ko'p qavatli inshootlar
+            LMK - qalin metall prokatdan tayyorlangan konstruksiya.
+            Material: 8-40 mm | Birikma: Payvandlash/Bolt | Xizmat muddati: 50+ yil | Maksimal oraliq: 80 m
             """)
         else:
             st.info("""
-            **LSTK** - yupqa sinklangan po'lat profillardan tayyorlangan konstruksiya.
-            
-            Asosiy xususiyatlar:
-            - Material: 0.7-4 mm
-            - Birikma: Vintli (samorezlar)
-            - Xizmat muddati: 35-40 yil
-            - Maksimal oraliq: 30 m
-            - Qo'llanilishi: Angarlar, omborlar, qishloq xo'jaligi inshootlari
+            LSTK - yupqa sinklangan polat profillardan tayyorlangan konstruksiya.
+            Material: 0.7-4 mm | Birikma: Vintli | Xizmat muddati: 35-40 yil | Maksimal oraliq: 30 m
             """)
         
         st.divider()
         
-        # ===== METALL KARKAS DETALLARI =====
-        st.markdown("#### Metall karkas detallari")
+        # ============================================================
+        # METALL KARKAS DETALLARI - TO'LIQ RO'YXAT
+        # ============================================================
+        st.markdown("### Metall karkas detallari - barcha elementlar")
         
-        col_m1, col_m2, col_m3, col_m4 = st.columns(4)
-        
-        with col_m1:
-            st.markdown("**Ustunlar (kolonnalar)**")
+        # ----- 1. USTUNLAR -----
+        st.markdown("**1. USTUNLAR (Kolonnalar)**")
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
             st.metric("Soni", f"{materials['total_columns']} ta")
+        with col2:
             st.metric("Metr", f"{materials['column_meters']:.1f} m")
+        with col3:
             st.metric("Og'irlik", f"{materials['column_kg']:.0f} kg")
+        with col4:
             st.metric("Tonna", f"{materials['column_tonna']:.3f} t")
-            
-        with col_m2:
-            st.markdown("**Tosinlar (rigellar)**")
+        
+        # ----- 2. TOSINLAR -----
+        st.markdown("**2. TOSINLAR (Rigellar)**")
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
             st.metric("Metr", f"{materials['beam_meters']:.1f} m")
+        with col2:
             st.metric("Og'irlik", f"{materials['beam_kg']:.0f} kg")
+        with col3:
             st.metric("Tonna", f"{materials['beam_tonna']:.3f} t")
-            
-        with col_m3:
-            st.markdown("**Fermalar**")
+        with col4:
+            st.metric("", "")
+        
+        # ----- 3. FERMALAR -----
+        st.markdown("**3. FERMALAR**")
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
             st.metric("Soni", f"{materials['truss_count']} ta")
+        with col2:
             st.metric("Metr", f"{materials['truss_meters']:.1f} m")
+        with col3:
             st.metric("Og'irlik", f"{materials['truss_kg']:.0f} kg")
+        with col4:
             st.metric("Tonna", f"{materials['truss_tonna']:.3f} t")
-            
-        with col_m4:
-            st.markdown("**Uzunasiga tosinlar**")
+        
+        # ----- 4. PROGONLAR (Uzunasiga tosinlar) -----
+        st.markdown("**4. PROGONLAR (Uzunasiga tosinlar)**")
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
             st.metric("Metr", f"{materials['longitudinal_meters']:.1f} m")
+        with col2:
             st.metric("Og'irlik", f"{materials['longitudinal_kg']:.0f} kg")
+        with col3:
             st.metric("Tonna", f"{materials['longitudinal_tonna']:.3f} t")
+        with col4:
+            st.metric("", "")
+        
+        # ----- 5. BOG'LAMALAR -----
+        if 'bracing_kg' in materials and materials['bracing_kg'] > 0:
+            st.markdown("**5. BOG'LAMALAR (Bracing)**")
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("Metr", f"{materials.get('bracing_total_m', 0):.1f} m")
+            with col2:
+                st.metric("Og'irlik", f"{materials.get('bracing_kg', 0):.0f} kg")
+            with col3:
+                st.metric("Tonna", f"{materials.get('bracing_tonna', 0):.3f} t")
+            with col4:
+                st.metric("", "")
+        
+        # ----- 6. BIRIKMA DETALLARI -----
+        if 'connection_kg' in materials and materials['connection_kg'] > 0:
+            st.markdown("**6. BIRIKMA DETALLARI**")
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("Birikma turi", materials.get('connection_type', 'mixed'))
+            with col2:
+                st.metric("Og'irlik", f"{materials.get('connection_kg', 0):.0f} kg")
+            with col3:
+                st.metric("Tonna", f"{materials.get('connection_tonna', 0):.3f} t")
+            with col4:
+                st.metric("", "")
         
         st.divider()
         
-        col_total1, col_total2, col_total3 = st.columns(3)
-        with col_total1:
-            st.metric("Jami metall", f"{materials['metal_tonna']:.3f} t")
-        with col_total2:
-            st.metric("Karkas narxi", f"${materials['metal_karkas_cost']:,.0f}")
-        with col_total3:
-            avg_price = materials['metal_karkas_cost'] / materials['metal_tonna'] if materials['metal_tonna'] > 0 else 0
-            st.metric("1 tonna o'rtacha narxi", f"${avg_price:.0f}")
+        # ============================================================
+        # JAMI HISOB
+        # ============================================================
+        st.markdown("### Jami metall konstruksiya")
         
-        # Grafik: metall tarkibi
-        metal_df = pd.DataFrame({
-            'Element': ['Ustunlar', 'Tosinlar', 'Fermalar', 'Uzunasiga'],
-            'Og\'irlik (kg)': [
-                materials['column_kg'],
-                materials['beam_kg'],
-                materials['truss_kg'],
-                materials['longitudinal_kg']
-            ],
-            'Narx ($)': [
-                materials['column_cost'],
-                materials['beam_cost'],
-                materials['truss_cost'],
-                materials['longitudinal_cost']
-            ]
-        })
+        # Barcha elementlarni yig'ish
+        total_elements = {
+            "Ustunlar": materials['column_kg'],
+            "Tosinlar": materials['beam_kg'],
+            "Fermalar": materials['truss_kg'],
+            "Progonlar": materials.get('longitudinal_kg', 0),
+            "Bog'lamalar": materials.get('bracing_kg', 0),
+            "Birikma detallari": materials.get('connection_kg', 0),
+        }
         
+        total_calculated = sum(total_elements.values())
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            df_total = pd.DataFrame({
+                'Element': list(total_elements.keys()),
+                'Ogirlik (kg)': [f"{v:,.0f}" for v in total_elements.values()],
+                'Tonna': [f"{v/1000:.3f}" for v in total_elements.values()]
+            })
+            st.dataframe(df_total, use_container_width=True, hide_index=True)
+        
+        with col2:
+            st.metric("Jami og'irlik", f"{total_calculated:,.0f} kg")
+            st.metric("Jami tonna", f"{total_calculated/1000:.3f} t")
+            
+            shown_value = materials.get('metal_tonna', 0) * 1000
+            diff = shown_value - total_calculated
+            
+            if abs(diff) > 100:
+                st.warning(f"Farq: {diff:,.0f} kg ({diff/1000:.3f} t)")
+            else:
+                st.success(f"Hisob-kitob togri! Farq: {diff:,.0f} kg")
+        
+        st.divider()
+        
+        # ============================================================
+        # NARXLAR
+        # ============================================================
+        st.markdown("### Metall narxlari")
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Jami metall narxi", f"${materials['metal_karkas_cost']:,.0f}")
+        with col2:
+            st.metric("1 tonna narxi", f"${materials['metal_karkas_cost'] / materials['metal_tonna']:,.0f}" if materials['metal_tonna'] > 0 else "$0")
+        with col3:
+            st.metric("1 m2 narxi", f"${materials['metal_karkas_cost'] / materials['floor_area_m2']:,.0f}" if materials['floor_area_m2'] > 0 else "$0")
+        
+        st.divider()
+        
+        # ============================================================
+        # GRAFIKLAR
+        # ============================================================
         col_ch1, col_ch2 = st.columns(2)
+        
         with col_ch1:
-            fig_kg = px.pie(metal_df, values='Og\'irlik (kg)', names='Element', 
-                           title='Metall og\'irlik bo\'yicha taqsimot',
-                           color_discrete_sequence=['#37474F', '#455A64', '#546E7A', '#607D8B'])
+            fig_kg = px.pie(
+                values=list(total_elements.values()),
+                names=list(total_elements.keys()),
+                title='Metall ogirlik boyicha taqsimot'
+            )
             fig_kg.update_traces(textposition='inside', textinfo='percent+label')
             st.plotly_chart(fig_kg, use_container_width=True)
-            
+        
         with col_ch2:
-            fig_price = px.pie(metal_df, values='Narx ($)', names='Element',
-                              title='Metall narx bo\'yicha taqsimot',
-                              color_discrete_sequence=['#1B5E20', '#2E7D32', '#388E3C', '#43A047'])
-            fig_price.update_traces(textposition='inside', textinfo='percent+label')
-            st.plotly_chart(fig_price, use_container_width=True)
+            price_elements = {
+                "Ustunlar": materials.get('column_cost', 0),
+                "Tosinlar": materials.get('beam_cost', 0),
+                "Fermalar": materials.get('truss_cost', 0),
+                "Progonlar": materials.get('longitudinal_cost', 0),
+                "Bog'lamalar": materials.get('bracing_cost', 0),
+                "Birikma detallari": materials.get('connection_cost', 0),
+            }
+            
+            if sum(price_elements.values()) > 0:
+                fig_price = px.pie(
+                    values=list(price_elements.values()),
+                    names=list(price_elements.keys()),
+                    title='Metall narx boyicha taqsimot'
+                )
+                fig_price.update_traces(textposition='inside', textinfo='percent+label')
+                st.plotly_chart(fig_price, use_container_width=True)
+            else:
+                st.info("Narx ma'lumotlari mavjud emas")
+        
+        st.divider()
+        
+        # ============================================================
+        # FORMULALAR
+        # ============================================================
+        with st.expander("Hisob-kitob formulalari"):
+            st.markdown("""
+            **1. Ustunlar:** total_columns * H * 32.5 + total_columns * 45
+            
+            **2. Tosinlar:** 2 * (L + W) * 1.5 * 24.5
+            
+            **3. Fermalar:** truss_count * W * truss_mult * 18.5 + truss_count * 60
+            
+            **4. Progonlar:** compute_purlins() hisobi
+            
+            **5. Bog'lamalar:** (vertikal + gorizontal + seysmik) * 14.0
+            
+            **6. Birikma detallari:** asosiy_metall * 0.04 (LMK) yoki * 0.02 (LSTK)
+            
+            **7. Jami:** ustunlar + tosinlar + fermalar + progonlar + bog'lamalar + birikmalar
+            """)
+    
+    
+    
     with tab5:
         st.markdown("####  Tuproq, yuklamalar va konstruktiv chidamlilik")
         st.caption(
