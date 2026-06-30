@@ -141,6 +141,14 @@ construction_types = {
         "max_span": 80,
         "typical_height": 8,
     },
+    "Tovuqxona": {
+        "color": "#37474F",
+        "description": "Parrandalar yetishtirish uchun",
+        "base_price": 280,
+        "min_span": 12,
+        "max_span": 80,
+        "typical_height": 8,
+    },
     "Ombor": {
         "color": "#455A64",
         "description": "Ko'p maqsadli saqlash ombori",
@@ -875,19 +883,24 @@ def compute_resilience_report(params, materials):
 import math
 import json
 
+import math
+import json
+import math
+import json
+
+import math
+import json
+
 def create_construction_3d(L, W, H, roof_pitch,
-                           window_count=4, 
-                           # Old devor darvozalari
+                           window_count=4,
+                           window_front_count=0,      # YANGI: old derazalar soni
+                           window_back_count=0,       # YANGI: orqa derazalar soni
                            door_front_count=1, door_front_width=12.0, door_front_height=6.5,
-                           # Orqa devor darvozalari
                            door_back_count=0, door_back_width=12.0, door_back_height=6.5,
-                           # Chap devor darvozalari
                            door_left_count=0, door_left_width=5.0, door_left_height=4.0,
-                           # O'ng devor darvozalari
                            door_right_count=0, door_right_width=5.0, door_right_height=4.0,
                            window_width=2.5, window_height=2.0,
                            window_spacing=0.0,
-                           # Ob-havo / zilzila simulyatsiyasi uchun (chidamlilik hisobidan keladi)
                            seismic_zone=8, wind_kPa=0.4, snow_kg_m2=50.0,
                            column_utilization=50.0, foundation_utilization=50.0, column_spacing=8.5):
 
@@ -915,56 +928,58 @@ def create_construction_3d(L, W, H, roof_pitch,
             "width": interval_width
         })
 
-    # Derazalar joylashuvi - faqat ustunlar orasiga
-    win_jsons = []
-    if window_count > 0 and L > 0 and len(column_intervals) > 0:
-        # Derazalarni ustunlar orasiga taqsimlash
+    # ============================================================
+    # DERAZALAR - OLD VA ORQA UCHUN ALOHIDA
+    # ============================================================
+    win_front_jsons = []
+    win_back_jsons = []
+    
+    if L > 0 and len(column_intervals) > 0:
         available_intervals = column_intervals.copy()
-        # Darvozalar joylashgan intervallarni olib tashlash
-        door_positions = []
-        
-        # Old darvozalar (Z = W)
-        for dx in calculate_door_positions(L, door_front_count, door_front_width):
-            door_positions.append({"x": dx, "wall": "front"})
-        
-        # Orqa darvozalar (Z = 0)
-        for dx in calculate_door_positions(L, door_back_count, door_back_width):
-            door_positions.append({"x": dx, "wall": "back"})
-        
-        # Darvozalar joylashgan intervallarni belgilash
-        blocked_intervals = set()
-        for door in door_positions:
-            door_x = door["x"]
-            half_door = door_front_width / 2 if door["wall"] == "front" else door_back_width / 2
-            for idx, interval in enumerate(available_intervals):
-                if (interval["start"] < door_x + half_door and 
-                    interval["end"] > door_x - half_door):
-                    blocked_intervals.add(idx)
-        
-        # Faqat bo'sh intervallarni olish
-        free_intervals = [i for i in range(len(available_intervals)) if i not in blocked_intervals]
-        
-        # Derazalarni joylashtirish
-        if len(free_intervals) > 0:
-            for i in range(min(window_count, len(free_intervals))):
-                interval_idx = free_intervals[i % len(free_intervals)]
-                interval = available_intervals[interval_idx]
+        door_front_positions = calculate_door_positions(L, door_front_count, door_front_width)
+        door_back_positions = calculate_door_positions(L, door_back_count, door_back_width)
+
+        def get_free_intervals(door_positions, door_width):
+            blocked = set()
+            half_door = door_width / 2
+            for door_x in door_positions:
+                for idx, interval in enumerate(available_intervals):
+                    if (interval["start"] < door_x + half_door and 
+                        interval["end"] > door_x - half_door):
+                        blocked.add(idx)
+            return [i for i in range(len(available_intervals)) if i not in blocked]
+
+        free_front = get_free_intervals(door_front_positions, door_front_width)
+        free_back = get_free_intervals(door_back_positions, door_back_width)
+
+        # ===== DERAZA SONLARINI ANIQLASH =====
+        if window_front_count is not None and window_back_count is not None:
+            front_count = window_front_count
+            back_count = window_back_count
+        else:
+            front_count = window_count - window_count // 2
+            back_count = window_count // 2
+
+        def place_windows(target_list, free_intervals, count):
+            if count <= 0:
+                return
+            pool = free_intervals if len(free_intervals) > 0 else list(range(len(available_intervals)))
+            if len(pool) == 0:
+                return
+            for i in range(count):
+                idx = pool[i % len(pool)]
+                interval = available_intervals[idx]
                 wx = interval["center"]
                 wy = H * 0.55
-                win_jsons.append((wx, wy))
-        else:
-            # Agar bo'sh interval bo'lmasa, derazalarni chetga joylashtirish
-            for i in range(window_count):
-                if len(available_intervals) > 0:
-                    idx = i % len(available_intervals)
-                    wx = available_intervals[idx]["center"]
-                    wy = H * 0.55
-                    win_jsons.append((wx, wy))
+                target_list.append((wx, wy))
 
-    win_pos_js = "[" + ",".join(f"[{p[0]:.3f},{p[1]:.3f}]" for p in win_jsons) + "]"
+        place_windows(win_front_jsons, free_front, front_count)
+        place_windows(win_back_jsons, free_back, back_count)
+
+    win_front_pos_js = "[" + ",".join(f"[{p[0]:.3f},{p[1]:.3f}]" for p in win_front_jsons) + "]"
+    win_back_pos_js = "[" + ",".join(f"[{p[0]:.3f},{p[1]:.3f}]" for p in win_back_jsons) + "]"
 
     # ========== DARVOZALAR JOYLASHUVI ==========
-    
     door_front_positions = calculate_door_positions(L, door_front_count, door_front_width)
     door_back_positions = calculate_door_positions(L, door_back_count, door_back_width)
     door_left_positions = calculate_door_positions(W, door_left_count, door_left_width)
@@ -979,6 +994,9 @@ def create_construction_3d(L, W, H, roof_pitch,
     wind_speed_js = round(wind_kPa * 8, 2)
     snow_intensity_js = round(min(1.0, snow_kg_m2 / 150), 2)
 
+    # ============================================================
+    # HTML KOD
+    # ============================================================
     html = f"""<!DOCTYPE html>
 <html>
 <head>
@@ -986,13 +1004,29 @@ def create_construction_3d(L, W, H, roof_pitch,
 <title>3D Angar Konstruktori - {L:.1f}x{W:.1f}x{H:.1f}m</title>
 <style>
   * {{ margin:0; padding:0; box-sizing:border-box; }}
-  body {{ overflow:hidden; background:#eef1f3; font-family:'Segoe UI', sans-serif; }}
-
+  html, body {{ 
+    width:100%; 
+    height:100%; 
+    overflow:hidden; 
+    background:#bcd6ea; 
+    font-family:'Segoe UI', sans-serif;
+  }}
+  :-webkit-full-screen {{ width:100% !important; height:100% !important; }}
+  :-moz-full-screen {{ width:100% !important; height:100% !important; }}
+  :fullscreen {{ width:100% !important; height:100% !important; }}
+  #fullscreen-container {{ position:fixed; top:0; left:0; width:100vw; height:100vh; z-index:9999; background:#bcd6ea; }}
+  #fullscreen-btn {{
+    position:absolute; top:16px; left:16px; z-index:999999;
+    background:rgba(255,255,255,0.95); border:1px solid #d0d0d0; color:#424242;
+    padding:8px 16px; border-radius:6px; cursor:pointer; font-size:14px; font-weight:600;
+    transition:all .15s; box-shadow:0 2px 12px rgba(0,0,0,0.1);
+  }}
+  #fullscreen-btn:hover {{ background:#37474F; color:#fff; border-color:#37474F; }}
+  #fullscreen-btn svg {{ vertical-align:middle; margin-right:6px; }}
   #ui-top {{
-    position:absolute; top:16px; left:16px; z-index:200;
+    position:absolute; top:16px; left:80px; z-index:200;
     display:flex; flex-wrap:wrap; gap:8px; align-items:center;
-    background:rgba(255,255,255,0.95);
-    padding:12px 16px; border-radius:8px;
+    background:rgba(255,255,255,0.95); padding:12px 16px; border-radius:8px;
     border:1px solid #e0e0e0; box-shadow:0 2px 12px rgba(0,0,0,0.06);
   }}
   #ui-top .logo {{ font-weight:700; color:#37474F; font-size:14px; margin-right:8px; }}
@@ -1003,53 +1037,70 @@ def create_construction_3d(L, W, H, roof_pitch,
   }}
   .vbtn:hover {{ background:#e8e8e8; border-color:#b0b0b0; }}
   .vbtn.active {{ background:#37474F; color:#fff; border-color:#37474F; }}
-
   .sep {{ width:1px; height:24px; background:#e0e0e0; margin:0 6px; }}
-
   .chk-group {{ display:flex; flex-wrap:wrap; gap:8px; }}
   .chk-label {{
     display:inline-flex; align-items:center; gap:4px; font-size:11px; color:#555; cursor:pointer;
     background:#fafafa; padding:5px 10px; border-radius:6px; border:1px solid #e0e0e0;
   }}
   .chk-label input {{ accent-color:#37474F; }}
-
   #info-panel {{
-    position:absolute; top:16px; right:0px; z-index:200;
-    background:rgba(255,255,255,0.95);
-    padding:16px 20px; border-radius:8px; border:1px solid #e0e0e0;
-    min-width:260px; font-size:12px; color:#424242;
-    box-shadow:0 2px 12px rgba(0,0,0,0.06);
+    position:absolute; top:16px; right:16px; z-index:200;
+    background:rgba(255,255,255,0.95); padding:16px 20px; border-radius:8px; border:1px solid #e0e0e0;
+    min-width:260px; font-size:12px; color:#424242; box-shadow:0 2px 12px rgba(0,0,0,0.06);
   }}
   #info-panel h4 {{ color:#37474F; font-size:13px; margin-bottom:10px; border-bottom:2px solid #e0e0e0; padding-bottom:6px; }}
   #info-panel .row {{ display:flex; justify-content:space-between; margin-bottom:5px; }}
   #info-panel .val {{ font-weight:600; color:#37474F; }}
-
-  #hint {{ position:absolute; bottom:16px; left:50%; transform:translateX(-50%); background:rgba(55,71,79,0.9); color:#fff; padding:8px 20px; border-radius:20px; font-size:11px; }}
-
+  #hint {{ position:absolute; bottom:16px; left:50%; transform:translateX(-50%); background:rgba(55,71,79,0.9); color:#fff; padding:8px 20px; border-radius:20px; font-size:11px; z-index:100; }}
   .sim-row {{ display:flex; align-items:center; gap:8px; margin-bottom:7px; }}
   .sim-row span:first-child {{ width:64px; flex-shrink:0; }}
   .sim-row span:last-child {{ width:38px; text-align:right; flex-shrink:0; font-weight:600; color:#37474F; }}
   .sim-row input[type=range] {{ flex:1; accent-color:#37474F; }}
-
+  #weather-controls {{
+    position:absolute; bottom:70px; left:16px; z-index:200; 
+    background:rgba(255,255,255,0.95); padding:14px 16px; border-radius:8px; 
+    border:1px solid #e0e0e0; box-shadow:0 2px 12px rgba(0,0,0,0.06); 
+    font-size:11px; color:#424242; min-width:250px;
+  }}
+  #weather-controls h4 {{ color:#37474F; font-size:12px; margin-bottom:8px; }}
+  #quakeResult {{
+    display:none; position:absolute; top:78px; left:50%; transform:translateX(-50%); 
+    z-index:250; padding:14px 28px; border-radius:10px; color:#fff; 
+    font-weight:700; font-size:14px; box-shadow:0 4px 20px rgba(0,0,0,0.3); 
+    text-align:center; max-width:520px;
+  }}
   #loading {{
-    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
-    background:#eef1f3; z-index:300; color:#607D8B; font-size:13px; letter-spacing:1px;
+    position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+    background:#bcd6ea; z-index:99999; color:#1c3a52; font-size:16px; letter-spacing:1px;
   }}
-
-  /* Drag & Drop uchun markerlar */
   .drag-marker {{
-    position:absolute; width:12px; height:12px; border-radius:50%;
+    position:fixed; width:14px; height:14px; border-radius:50%;
     background:#ff5722; border:2px solid #fff; cursor:grab;
-    z-index:100; box-shadow:0 2px 8px rgba(0,0,0,0.3);
-    pointer-events:all;
+    z-index:99999; box-shadow:0 2px 8px rgba(0,0,0,0.3);
+    pointer-events:all; transform:translate(-50%, -50%);
   }}
-  .drag-marker:hover {{ transform:scale(1.2); }}
+  .drag-marker:hover {{ transform:translate(-50%, -50%) scale(1.2); }}
   .drag-marker.door {{ background:#2196F3; }}
   .drag-marker.window {{ background:#4CAF50; }}
   .drag-label {{
-    position:absolute; font-size:8px; color:#fff; background:rgba(0,0,0,0.7);
-    padding:1px 4px; border-radius:3px; pointer-events:none;
-    white-space:nowrap; transform:translateY(-20px);
+    position:fixed; font-size:8px; color:#fff; background:rgba(0,0,0,0.7);
+    padding:2px 6px; border-radius:3px; pointer-events:none;
+    white-space:nowrap; transform:translate(-50%, -24px); z-index:99999;
+  }}
+  canvas {{ display:block !important; width:100% !important; height:100% !important; }}
+  .css2d-renderer {{
+    position:fixed !important; top:0 !important; left:0 !important;
+    width:100% !important; height:100% !important;
+    pointer-events:none !important; z-index:10 !important;
+  }}
+  @media (max-width: 768px) {{
+    #ui-top {{ top:70px; left:10px; right:10px; flex-wrap:wrap; padding:10px 12px; font-size:11px; }}
+    #info-panel {{ display:none; }}
+    #weather-controls {{ bottom:70px; left:10px; right:10px; min-width:auto; }}
+    .vbtn {{ padding:4px 10px; font-size:10px; }}
+    .chk-label {{ font-size:10px; padding:4px 8px; }}
+    #fullscreen-btn {{ top:10px; left:10px; padding:6px 12px; font-size:12px; }}
   }}
 </style>
 </head>
@@ -1057,39 +1108,96 @@ def create_construction_3d(L, W, H, roof_pitch,
 
 <div id="loading">3D MODEL YUKLANMOQDA...</div>
 
+<button id="fullscreen-btn" onclick="toggleFullscreen()">
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <polyline points="15 3 21 3 21 9"></polyline>
+    <polyline points="9 21 3 21 3 15"></polyline>
+    <line x1="21" y1="3" x2="14" y2="10"></line>
+    <line x1="3" y1="21" x2="10" y2="14"></line>
+  </svg>
+  <span id="fs-text">Fullscreen</span>
+</button>
+
 <div id="ui-top">
-  <span class="logo">3D KONSTRUKTOR</span>
-  <button class="vbtn active" data-v="iso">Izometrik</button>
-  <button class="vbtn" data-v="front">Old fasad</button>
-  <button class="vbtn" data-v="side">Yon fasad</button>
-  <button class="vbtn" data-v="top">Reja</button>
-  <button class="vbtn" data-v="inside">Ichkaridan</button>
+  <span class="logo">3D CONSTRUCTOR</span>
+  <button class="vbtn active" data-v="iso">Isometric</button>
+  <button class="vbtn" data-v="front">Front</button>
+  <button class="vbtn" data-v="side">Side</button>
+  <button class="vbtn" data-v="top">Top</button>
+  <button class="vbtn" data-v="inside">Inside</button>
   <div class="sep"></div>
   <div class="chk-group">
-    <label class="chk-label"><input type="checkbox" id="chkWalls"   checked> Devorlar</label>
-    <label class="chk-label"><input type="checkbox" id="chkRoof"    checked> Tom</label>
-    <label class="chk-label"><input type="checkbox" id="chkColumns" checked> Ustunlar</label>
-    <label class="chk-label"><input type="checkbox" id="chkTruss"   checked> Fermalar</label>
-    <label class="chk-label"><input type="checkbox" id="chkWin"     checked> Derazalar</label>
-    <label class="chk-label"><input type="checkbox" id="chkDoor"    checked> Darvozalar</label>
+    <label class="chk-label"><input type="checkbox" id="chkWalls"   checked> Walls</label>
+    <label class="chk-label"><input type="checkbox" id="chkRoof"    checked> Roof</label>
+    <label class="chk-label"><input type="checkbox" id="chkColumns" checked> Columns</label>
+    <label class="chk-label"><input type="checkbox" id="chkTruss"   checked> Trusses</label>
+    <label class="chk-label"><input type="checkbox" id="chkWin"     checked> Windows</label>
+    <label class="chk-label"><input type="checkbox" id="chkDoor"    checked> Doors</label>
   </div>
   <div class="sep"></div>
-  <button class="vbtn" id="btnDragMode" style="background:#ff5722;color:#fff;border-color:#ff5722;">Siljitish</button>
+  <button class="vbtn" id="btnDragMode" style="background:#ff5722;color:#fff;border-color:#ff5722;">Drag</button>
 </div>
 
-<div id="weather-controls" style="position:absolute; bottom:16px; left:16px; z-index:200; background:rgba(255,255,255,0.95); padding:14px 16px; border-radius:8px; border:1px solid #e0e0e0; box-shadow:0 2px 12px rgba(0,0,0,0.06); font-size:11px; color:#424242; min-width:250px;">
-  <div style="font-weight:700; color:#37474F; margin-bottom:8px; font-size:12px;">Simulyatsiya darajasi</div>
-  <div class="sim-row"><span>Qor</span><input type="range" id="sldSnow" min="0" max="1000" step="10" value="0"><span id="valSnow">0%</span></div>
-  <div class="sim-row"><span> Yomg'ir</span><input type="range" id="sldRain" min="0" max="1000" step="10" value="0"><span id="valRain">0%</span></div>
-  <div class="sim-row"><span> Shamol</span><input type="range" id="sldWind" min="0" max="1000" step="10" value="0"><span id="valWind">0%</span></div>
-  <div class="sim-row"><span> Zilzila</span><input type="range" id="sldQuake" min="0" max="1000" step="10" value="100"><span id="valQuake">100%</span></div>
-  <button class="vbtn" id="btnQuake" style="margin-top:8px; width:100%; background:#C62828; color:#fff; border-color:#C62828;"> Zilzila testini boshlash</button>
+<div id="weather-controls">
+  <h4>Weather Simulation</h4>
+  <div class="sim-row"><span>Snow</span><input type="range" id="sldSnow" min="0" max="1000" step="10" value="0"><span id="valSnow">0%</span></div>
+  <div class="sim-row"><span>Rain</span><input type="range" id="sldRain" min="0" max="1000" step="10" value="0"><span id="valRain">0%</span></div>
+  <div class="sim-row"><span>Wind</span><input type="range" id="sldWind" min="0" max="1000" step="10" value="0"><span id="valWind">0%</span></div>
+  <div class="sim-row"><span>Earthquake</span><input type="range" id="sldQuake" min="0" max="1000" step="10" value="100"><span id="valQuake">100%</span></div>
+  <button class="vbtn" id="btnQuake" style="margin-top:8px; width:100%; background:#C62828; color:#fff; border-color:#C62828;">Start Earthquake Test</button>
 </div>
 
-<div id="quakeResult" style="display:none; position:absolute; top:78px; left:50%; transform:translateX(-50%); z-index:250; padding:14px 28px; border-radius:10px; color:#fff; font-weight:700; font-size:14px; box-shadow:0 4px 20px rgba(0,0,0,0.3); text-align:center; max-width:520px;"></div>
+<div id="quakeResult"></div>
+<div id="hint">Rotate: LMB | Pan: RMB | Zoom: Wheel | Drag: "Drag" button</div>
 
+<div id="info-panel">
+  <h4>Building Parameters</h4>
+  <div class="row"><span>Length (L)</span><span class="val">{L:.1f} m</span></div>
+  <div class="row"><span>Width (W)</span><span class="val">{W:.1f} m</span></div>
+  <div class="row"><span>Height (H)</span><span class="val">{H:.1f} m</span></div>
+  <div class="row"><span>Roof Pitch</span><span class="val">{roof_pitch:.1f} deg</span></div>
+  <div class="row"><span>Ridge Height</span><span class="val">{ridge_height:.2f} m</span></div>
+  <div class="row"><span>Columns</span><span class="val">{n_cols_x}x{n_cols_z}</span></div>
+  <div class="row"><span>Windows</span><span class="val">{window_count}</span></div>
+  <div class="row"><span>Seismic Zone</span><span class="val">{seismic_zone}</span></div>
+  <div class="row"><span>Column Utilization</span><span class="val">{column_utilization:.1f}%</span></div>
+  <div class="row"><span>Foundation Utilization</span><span class="val">{foundation_utilization:.1f}%</span></div>
+</div>
 
-<div id="hint">Aylantirish: LMB | Surish: RMB | Zoom: Gildirak | Siljitish: "Siljitish" tugmasi</div>
+<script>
+function toggleFullscreen() {{
+  const el = document.documentElement;
+  const fsText = document.getElementById('fs-text');
+  if (!document.fullscreenElement && !document.webkitFullscreenElement) {{
+    if (el.requestFullscreen) {{ el.requestFullscreen(); }}
+    else if (el.webkitRequestFullscreen) {{ el.webkitRequestFullscreen(); }}
+    fsText.textContent = 'Exit';
+  }} else {{
+    if (document.exitFullscreen) {{ document.exitFullscreen(); }}
+    else if (document.webkitExitFullscreen) {{ document.webkitExitFullscreen(); }}
+    fsText.textContent = 'Fullscreen';
+  }}
+}}
+document.addEventListener('fullscreenchange', updateFullscreenBtn);
+document.addEventListener('webkitfullscreenchange', updateFullscreenBtn);
+function updateFullscreenBtn() {{
+  const fsText = document.getElementById('fs-text');
+  if (document.fullscreenElement || document.webkitFullscreenElement) {{ fsText.textContent = 'Exit'; }}
+  else {{ fsText.textContent = 'Fullscreen'; }}
+}}
+document.addEventListener('click', function firstClick() {{
+  document.removeEventListener('click', firstClick);
+  setTimeout(() => {{
+    const el = document.documentElement;
+    if (!document.fullscreenElement && !document.webkitFullscreenElement) {{
+      if (el.requestFullscreen) {{ el.requestFullscreen().catch(() => {{}}); }}
+      else if (el.webkitRequestFullscreen) {{ el.webkitRequestFullscreen(); }}
+    }}
+  }}, 500);
+}}, {{ once: true }});
+window.addEventListener('load', () => {{ const l = document.getElementById('loading'); if (l) l.style.display = 'none'; }});
+setTimeout(() => {{ const l = document.getElementById('loading'); if (l) l.style.display = 'none'; }}, 1200);
+</script>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
@@ -1106,35 +1214,33 @@ const PITCH_RISE = {pitch_rise};
 const IS_PITCHED = PITCH_DEG > 0.5;
 const HALF_W = W / 2;
 
-// Old darvozalar
 const DOOR_FRONT_COUNT = {door_front_count};
 const DOOR_FRONT_W = {door_front_width};
 const DOOR_FRONT_H = {door_front_height};
 let DOOR_FRONT_POSITIONS = {door_front_pos_js};
 
-// Orqa darvozalar
 const DOOR_BACK_COUNT = {door_back_count};
 const DOOR_BACK_W = {door_back_width};
 const DOOR_BACK_H = {door_back_height};
 let DOOR_BACK_POSITIONS = {door_back_pos_js};
 
-// Chap darvozalar (X = 0)
 const DOOR_LEFT_COUNT = {door_left_count};
 const DOOR_LEFT_W = {door_left_width};
 const DOOR_LEFT_H = {door_left_height};
 let DOOR_LEFT_POSITIONS = {door_left_pos_js};
 
-// O'ng darvozalar (X = L)
 const DOOR_RIGHT_COUNT = {door_right_count};
 const DOOR_RIGHT_W = {door_right_width};
 const DOOR_RIGHT_H = {door_right_height};
 let DOOR_RIGHT_POSITIONS = {door_right_pos_js};
 
+// ===== ALOHIDA DERAZA RO'YXATLARI =====
 const WIN_W = {window_width};
 const WIN_H = {window_height};
 const WIN_COUNT = {window_count};
 const WIN_SPACING = {window_spacing};
-let WIN_POSITIONS = {win_pos_js};
+let WIN_FRONT_POSITIONS = {win_front_pos_js};   // FAQAT OLD DEVOR
+let WIN_BACK_POSITIONS = {win_back_pos_js};     // FAQAT ORQA DEVOR
 
 const COL_STEP_X = {actual_spacing_x:.4f};
 const COL_STEP_Z = {actual_spacing_z:.4f};
@@ -1143,47 +1249,42 @@ const N_COLS_Z = {n_cols_z};
 
 const IB_H = 0.30; const IB_BF = 0.20; const IB_TF = 0.016; const IB_TW = 0.010;
 
-// Ob-havo / zilzila simulyatsiyasi - chidamlilik hisobidan kelgan qiymatlar
 const SEISMIC_ZONE_VAL = {seismic_zone};
 const WIND_SPEED_BASE = {wind_speed_js};
 const SNOW_INTENSITY_BASE = {snow_intensity_js};
 const COLUMN_UTIL_VAL = {column_utilization};
 const FOUNDATION_UTIL_VAL = {foundation_utilization};
 
-// Ustunlar orasidagi intervallar
 const columnIntervals = [];
 for (let i = 0; i < N_COLS_X - 1; i++) {{
   const x1 = i * COL_STEP_X;
   const x2 = (i + 1) * COL_STEP_X;
-  columnIntervals.push({{
-    start: x1, end: x2, center: (x1 + x2) / 2, width: x2 - x1
-  }});
+  columnIntervals.push({{ start: x1, end: x2, center: (x1 + x2) / 2, width: x2 - x1 }});
 }}
 
 // ============================================================
-// Scene setup
+// SCENE
 // ============================================================
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0xeef1f3);
-scene.fog = new THREE.Fog(0xeef1f3, Math.max(L, W) * 2.2, Math.max(L, W) * 5);
+scene.background = new THREE.Color(0xcfe4f2);
 
-const camera = new THREE.PerspectiveCamera(42, innerWidth/innerHeight, 0.1, 5000);
-camera.position.set(Math.max(L, 20) * 1.1, Math.max(RIDGE_H, 10) * 1.5, Math.max(W, 20) * 1.6);
+const camera = new THREE.PerspectiveCamera(40, innerWidth/innerHeight, 0.1, 5000);
+camera.position.set(Math.max(L, 20) * 1.2, Math.max(RIDGE_H, 10) * 1.6, Math.max(W, 20) * 1.8);
 
 const renderer = new THREE.WebGLRenderer({{ antialias:true, alpha:false }});
 renderer.setSize(innerWidth, innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.encoding = THREE.sRGBEncoding;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
+renderer.toneMappingExposure = 1.1;
 renderer.physicallyCorrectLights = true;
 document.body.appendChild(renderer.domElement);
 
 const lblRen = new THREE.CSS2DRenderer();
 lblRen.setSize(innerWidth, innerHeight);
-lblRen.domElement.style.cssText = 'position:absolute;top:0;left:0;pointer-events:none;z-index:10;';
+lblRen.domElement.style.cssText = 'position:fixed;top:0;left:0;pointer-events:none;z-index:10;';
 document.body.appendChild(lblRen.domElement);
 
 const controls = new THREE.OrbitControls(camera, renderer.domElement);
@@ -1195,13 +1296,16 @@ controls.minDistance = 2;
 controls.maxPolarAngle = Math.PI * 0.495;
 
 // ============================================================
-// Lighting
+// YORUG'LIK
 // ============================================================
-const hemi = new THREE.HemisphereLight(0xdfeaf2, 0xb9b0a2, 0.55);
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+scene.add(ambientLight);
+
+const hemi = new THREE.HemisphereLight(0x87CEEB, 0x8a7a6a, 0.7);
 scene.add(hemi);
 
-const sun = new THREE.DirectionalLight(0xfff4e0, 2.4);
-sun.position.set(Math.max(L, 20) * 0.9, Math.max(RIDGE_H, 10) * 2.6, Math.max(W, 20) * 0.7);
+const sun = new THREE.DirectionalLight(0xffeedd, 2.8);
+sun.position.set(Math.max(L, 20) * 0.8, Math.max(RIDGE_H, 10) * 3.0, Math.max(W, 20) * 0.6);
 sun.castShadow = true;
 sun.shadow.mapSize.width = 2048;
 sun.shadow.mapSize.height = 2048;
@@ -1215,73 +1319,50 @@ sun.shadow.bias = -0.0003;
 sun.shadow.normalBias = 0.02;
 scene.add(sun);
 
-const fillLight = new THREE.DirectionalLight(0xcfe0ff, 0.6);
-fillLight.position.set(-Math.max(L, 10), H * 2.2, -Math.max(W, 10));
+const fillLight = new THREE.DirectionalLight(0x88bbff, 0.8);
+fillLight.position.set(-Math.max(L, 10), H * 2.0, -Math.max(W, 10));
 scene.add(fillLight);
 
-const interiorLight = new THREE.PointLight(0xfff8ec, 3.2, Math.max(L, W, H) * 3.5, 1.4);
-interiorLight.position.set(L/2, H * 0.85, W/2);
+const interiorLight = new THREE.PointLight(0xfff4e0, 2.0, Math.max(L, W, H) * 3.0);
+interiorLight.position.set(L/2, H * 0.8, W/2);
 scene.add(interiorLight);
 
-const interiorLight2 = new THREE.PointLight(0xfff4e0, 2.2, Math.max(L, W, H) * 3.0, 1.6);
-interiorLight2.position.set(L * 0.25, H * 0.75, W * 0.5);
-scene.add(interiorLight2);
-
-const interiorLight3 = new THREE.PointLight(0xfff4e0, 2.2, Math.max(L, W, H) * 3.0, 1.6);
-interiorLight3.position.set(L * 0.75, H * 0.75, W * 0.5);
-scene.add(interiorLight3);
-
-const interiorAmbient = new THREE.AmbientLight(0xffffff, 0.55);
-scene.add(interiorAmbient);
 // ============================================================
-// MATERIALS
+// MATERIAL
 // ============================================================
-const matSteel    = new THREE.MeshStandardMaterial({{ color:0x8a93a0, metalness:0.85, roughness:0.32 }});
-const matBeam     = new THREE.MeshStandardMaterial({{ color:0x5c6670, metalness:0.92, roughness:0.25 }});
-const matBeamWeb  = new THREE.MeshStandardMaterial({{ color:0x707a85, metalness:0.9,  roughness:0.3 }});
-const matPanel    = new THREE.MeshStandardMaterial({{ color:0xe6e9eb, roughness:0.55, metalness:0.08 }});
-const matPanelDouble = new THREE.MeshStandardMaterial({{ color:0xe6e9eb, roughness:0.55, metalness:0.08, side:THREE.DoubleSide }});
-const matPanelTrim= new THREE.MeshStandardMaterial({{ color:0x37474F, roughness:0.4,  metalness:0.6  }});
-const matRoof     = new THREE.MeshStandardMaterial({{ color:0x7c8893, metalness:0.5,  roughness:0.4, side:THREE.DoubleSide }});
-const matRidge    = new THREE.MeshStandardMaterial({{ color:0x37474F, metalness:0.85, roughness:0.25 }});
+const matSteel    = new THREE.MeshStandardMaterial({{ color:0x8a93a0, metalness:0.6, roughness:0.3 }});
+const matBeam     = new THREE.MeshStandardMaterial({{ color:0x6a7380, metalness:0.7, roughness:0.25 }});
+const matBeamWeb  = new THREE.MeshStandardMaterial({{ color:0x7a8390, metalness:0.6, roughness:0.3 }});
+const matPanel    = new THREE.MeshStandardMaterial({{ color:0xe8ebe5, roughness:0.5, metalness:0.05 }});
+const matPanelDouble = new THREE.MeshStandardMaterial({{ color:0xe8ebe5, roughness:0.5, metalness:0.05, side:THREE.DoubleSide }});
+const matPanelTrim= new THREE.MeshStandardMaterial({{ color:0x4a5a6a, roughness:0.3, metalness:0.5 }});
+const matRoof     = new THREE.MeshStandardMaterial({{ color:0x8a9aa8, metalness:0.3, roughness:0.5, side:THREE.DoubleSide }});
+const matRidge    = new THREE.MeshStandardMaterial({{ color:0x4a5a6a, metalness:0.7, roughness:0.25 }});
 
-// ✅ QO'SHISH KERAK: Deraza oynasi
 const matGlass    = new THREE.MeshPhysicalMaterial({{
-  color: 0x87CEEB,
+  color: 0x88ccdd,
   transparent: true,
-  opacity: 0.5,
-  roughness: 0.1,
+  opacity: 0.35,
+  roughness: 0.05,
   metalness: 0.0,
-  side: THREE.DoubleSide
+  side: THREE.DoubleSide,
 }});
 
-// ✅ QO'SHISH KERAK: Deraza ramkasi
-const matFrame    = new THREE.MeshStandardMaterial({{ 
-  color: 0x78909C,
-  roughness: 0.2,
-  metalness: 0.5
-}});
+const matFrame    = new THREE.MeshStandardMaterial({{ color: 0x8a9aa8, roughness: 0.2, metalness: 0.4 }});
 
-const matConcrete = new THREE.MeshStandardMaterial({{ color:0xc7c9cb, roughness:0.92, metalness:0.0 }});
-const matDoorPanel= new THREE.MeshStandardMaterial({{ color:0x6b7785, metalness:0.6, roughness:0.35 }});
-const matDoorFrame= new THREE.MeshStandardMaterial({{ color:0x808487, metalness:0.5, roughness:0.45 }});
-const matGround   = new THREE.MeshStandardMaterial({{ color:0xc9cfb8, roughness:0.95, metalness:0.0 }});
-const matCorrugated = new THREE.MeshStandardMaterial({{ color:0xdde1e3, roughness:0.5, metalness:0.15, side:THREE.DoubleSide }});
-const matGusset   = new THREE.MeshStandardMaterial({{ color:0x4a525c, metalness:0.7, roughness:0.4 }});
-const matBolt     = new THREE.MeshStandardMaterial({{ color:0x2b2f33, metalness:0.6, roughness:0.5 }});
-// ============================================================
-// Corrugated panel geometry
-// ============================================================
+const matConcrete = new THREE.MeshStandardMaterial({{ color:0xc8cacb, roughness:0.9, metalness:0.0 }});
+const matDoorPanel= new THREE.MeshStandardMaterial({{ color:0x6a7a8a, metalness:0.4, roughness:0.4 }});
+const matDoorFrame= new THREE.MeshStandardMaterial({{ color:0x8a8a8a, metalness:0.4, roughness:0.4 }});
+const matGround   = new THREE.MeshStandardMaterial({{ color:0xbec9b0, roughness:0.95, metalness:0.0 }});
+const matCorrugated = new THREE.MeshStandardMaterial({{ color:0xccd2d8, roughness:0.5, metalness:0.1, side:THREE.DoubleSide }});
+const matGusset   = new THREE.MeshStandardMaterial({{ color:0x5a6a7a, metalness:0.5, roughness:0.4 }});
+const matBolt     = new THREE.MeshStandardMaterial({{ color:0x3a4a5a, metalness:0.5, roughness:0.5 }});
+
 function makeCorrugatedPanelGeometry(width, height, corrugateAxis) {{
-  const ampl = 0.018;
+  const ampl = 0.02;
   let segW, segH;
-  if (corrugateAxis === 'height') {{
-    segW = 1;
-    segH = Math.max(8, Math.round(height / 0.18));
-  }} else {{
-    segW = Math.max(8, Math.round(width / 0.18));
-    segH = 1;
-  }}
+  if (corrugateAxis === 'height') {{ segW = 1; segH = Math.max(8, Math.round(height / 0.18)); }}
+  else {{ segW = Math.max(8, Math.round(width / 0.18)); segH = 1; }}
   const geo = new THREE.PlaneGeometry(width, height, segW, segH);
   const pos = geo.attributes.position;
   for (let i = 0; i < pos.count; i++) {{
@@ -1299,9 +1380,6 @@ function makeCorrugatedPanelGeometry(width, height, corrugateAxis) {{
   return geo;
 }}
 
-// ============================================================
-// Ground
-// ============================================================
 const groundGeometry = new THREE.PlaneGeometry(Math.max(L, W) * 4, Math.max(L, W) * 4);
 const ground = new THREE.Mesh(groundGeometry, matGround);
 ground.rotation.x = -Math.PI / 2;
@@ -1322,14 +1400,11 @@ interiorFloor.position.set(L/2, 0.16, W/2);
 interiorFloor.receiveShadow = true;
 scene.add(interiorFloor);
 
-// ============================================================
-// Bino guruhi - zilzila simulyatsiyasida FAQAT shu guruh harakatlanadi
-// ============================================================
 const buildingGroup = new THREE.Group();
 scene.add(buildingGroup);
 
 // ============================================================
-// Columns
+// COLUMNS
 // ============================================================
 const colGroup = new THREE.Group();
 function makeIBeamProfile() {{
@@ -1352,13 +1427,11 @@ function addColumn(x, z) {{
   col.rotation.x = -Math.PI/2;
   col.position.set(x - IB_H/2, 0, z - IB_BF/2);
   colGroup.add(col);
-
   const basePlate = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.025, 0.45), matSteel);
   basePlate.position.set(x, 0.025, z);
   basePlate.castShadow = true;
   basePlate.receiveShadow = true;
   colGroup.add(basePlate);
-
   for (const dx of [-0.16, 0.16]) {{
     for (const dz of [-0.16, 0.16]) {{
       const bolt = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.08, 6), matSteel);
@@ -1381,7 +1454,7 @@ for (let j = 1; j < N_COLS_Z - 1; j++) {{
 buildingGroup.add(colGroup);
 
 // ============================================================
-// Trusses
+// TRUSSES
 // ============================================================
 const trussGroup = new THREE.Group();
 
@@ -1389,7 +1462,6 @@ function buildWarrenTruss(xPos) {{
   const g = new THREE.Group();
   const tube_r_chord = 0.07;
   const tube_r_web   = 0.05;
-
   function addMember(p1, p2, radius, mat) {{
     const dir = new THREE.Vector3().subVectors(p2, p1);
     const len = dir.length();
@@ -1402,32 +1474,23 @@ function buildWarrenTruss(xPos) {{
     m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), dir.clone().normalize());
     g.add(m);
   }}
-
   const halfSpanLen = IS_PITCHED ? HALF_W / Math.cos(PITCH_RAD) : HALF_W;
   const panelsPerSide = Math.max(2, Math.round(halfSpanLen / 1.8));
-
   function chordPoint(t, side) {{
     const z = side === 'L' ? t * HALF_W : HALF_W + t * HALF_W;
     const bottomY = H;
     const topY = side === 'L' ? H + t * PITCH_RISE : H + (1 - t) * PITCH_RISE;
-    return {{
-      bot: new THREE.Vector3(xPos, bottomY, z),
-      top: new THREE.Vector3(xPos, topY, z)
-    }};
+    return {{ bot: new THREE.Vector3(xPos, bottomY, z), top: new THREE.Vector3(xPos, topY, z) }};
   }}
-
   const nodesL = [], nodesR = [];
   for (let i = 0; i <= panelsPerSide; i++) nodesL.push(chordPoint(i / panelsPerSide, 'L'));
   for (let i = 0; i <= panelsPerSide; i++) nodesR.push(chordPoint(i / panelsPerSide, 'R'));
-
   for (let i = 0; i < nodesL.length - 1; i++) addMember(nodesL[i].bot, nodesL[i+1].bot, tube_r_chord, matBeam);
   addMember(nodesL[nodesL.length-1].bot, nodesR[0].bot, tube_r_chord, matBeam);
   for (let i = 0; i < nodesR.length - 1; i++) addMember(nodesR[i].bot, nodesR[i+1].bot, tube_r_chord, matBeam);
-
   for (let i = 0; i < nodesL.length - 1; i++) addMember(nodesL[i].top, nodesL[i+1].top, tube_r_chord, matBeam);
   addMember(nodesL[nodesL.length-1].top, nodesR[0].top, tube_r_chord, matBeam);
   for (let i = 0; i < nodesR.length - 1; i++) addMember(nodesR[i].top, nodesR[i+1].top, tube_r_chord, matBeam);
-
   function addWebPanels(nodes) {{
     for (let i = 0; i < nodes.length - 1; i++) {{
       addMember(nodes[i].bot, nodes[i].top, tube_r_web, matBeamWeb);
@@ -1438,9 +1501,7 @@ function buildWarrenTruss(xPos) {{
   }}
   addWebPanels(nodesL);
   addWebPanels(nodesR);
-
   addMember(nodesL[nodesL.length-1].top, nodesL[nodesL.length-1].bot, tube_r_web, matBeamWeb);
-
   function addGusset(p, size) {{
     const plate = new THREE.Mesh(new THREE.BoxGeometry(size, size, 0.025), matGusset);
     plate.position.copy(p);
@@ -1456,12 +1517,10 @@ function buildWarrenTruss(xPos) {{
   }}
   nodesL.forEach(n => {{ addGusset(n.bot, 0.22); addGusset(n.top, 0.22); }});
   nodesR.slice(1).forEach(n => {{ addGusset(n.bot, 0.22); addGusset(n.top, 0.22); }});
-
   const ridgeGusset = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.03), matGusset);
   ridgeGusset.position.set(xPos, H + PITCH_RISE, HALF_W);
   ridgeGusset.castShadow = true;
   g.add(ridgeGusset);
-
   return g;
 }}
 
@@ -1499,7 +1558,7 @@ if (IS_PITCHED) {{
 buildingGroup.add(trussGroup);
 
 // ============================================================
-// Roof
+// ROOF
 // ============================================================
 const roofGroup = new THREE.Group();
 
@@ -1585,14 +1644,13 @@ if (IS_PITCHED && W > 0) {{
 buildingGroup.add(roofGroup);
 
 // ============================================================
-// Walls with openings - Dinamik qayta qurish uchun
+// WALLS
 // ============================================================
 const wallGroup = new THREE.Group();
 const windowGroup = new THREE.Group();
 const doorGroup = new THREE.Group();
 const T = 0.12;
 
-// Ob'ektlar ma'lumotlarini saqlash uchun
 let wallSegments = [];
 let windowMeshes = [];
 let doorMeshes = [];
@@ -1607,15 +1665,8 @@ function addWallSegment(group, length, height, axis, normalSign, fixedCoord, seg
     const ly = pos.getY(i);
     const lz = pos.getZ(i);
     let wx, wy, wz;
-    if (axis === 'x') {{
-      wx = segCenter + lx;
-      wy = baseY + ly + height/2;
-      wz = fixedCoord + lz * normalSign;
-    }} else {{
-      wz = segCenter + lx;
-      wy = baseY + ly + height/2;
-      wx = fixedCoord + lz * normalSign;
-    }}
+    if (axis === 'x') {{ wx = segCenter + lx; wy = baseY + ly + height/2; wz = fixedCoord + lz * normalSign; }}
+    else {{ wz = segCenter + lx; wy = baseY + ly + height/2; wx = fixedCoord + lz * normalSign; }}
     newPos[i*3] = wx; newPos[i*3+1] = wy; newPos[i*3+2] = wz;
   }}
   const newGeo = new THREE.BufferGeometry();
@@ -1630,28 +1681,29 @@ function addWallSegment(group, length, height, axis, normalSign, fixedCoord, seg
 }}
 
 function addWindowMesh(axis, fixedCoord, normalSign, centerAlong, centerY) {{
+  const glassT = T * 0.5;
+  const frameT = T + 0.04;
   let g, f, mvv, mhh;
   if (axis === 'x') {{
-    g  = new THREE.BoxGeometry(WIN_W, WIN_H, 0.03);
-    f  = new THREE.BoxGeometry(WIN_W + 0.07, WIN_H + 0.07, 0.07);
-    mvv = new THREE.BoxGeometry(0.03, WIN_H, 0.025);
-    mhh = new THREE.BoxGeometry(WIN_W, 0.03, 0.025);
+    g  = new THREE.BoxGeometry(WIN_W, WIN_H, glassT);
+    f  = new THREE.BoxGeometry(WIN_W + 0.08, WIN_H + 0.08, frameT);
+    mvv = new THREE.BoxGeometry(0.035, WIN_H, glassT + 0.015);
+    mhh = new THREE.BoxGeometry(WIN_W, 0.035, glassT + 0.015);
   }} else {{
-    g  = new THREE.BoxGeometry(0.03, WIN_H, WIN_W);
-    f  = new THREE.BoxGeometry(0.07, WIN_H + 0.07, WIN_W + 0.07);
-    mvv = new THREE.BoxGeometry(0.025, WIN_H, 0.03);
-    mhh = new THREE.BoxGeometry(0.025, 0.03, WIN_W);
+    g  = new THREE.BoxGeometry(glassT, WIN_H, WIN_W);
+    f  = new THREE.BoxGeometry(frameT, WIN_H + 0.08, WIN_W + 0.08);
+    mvv = new THREE.BoxGeometry(glassT + 0.015, WIN_H, 0.035);
+    mhh = new THREE.BoxGeometry(glassT + 0.015, 0.035, WIN_W);
   }}
   const glassMesh = new THREE.Mesh(g, matGlass);
   const frameMesh = new THREE.Mesh(f, matFrame);
   frameMesh.castShadow = true;
-  const offset = 0.025 * normalSign;
   if (axis === 'x') {{
-    glassMesh.position.set(centerAlong, centerY, fixedCoord + offset);
-    frameMesh.position.set(centerAlong, centerY, fixedCoord + offset);
+    glassMesh.position.set(centerAlong, centerY, fixedCoord);
+    frameMesh.position.set(centerAlong, centerY, fixedCoord);
   }} else {{
-    glassMesh.position.set(fixedCoord + offset, centerY, centerAlong);
-    frameMesh.position.set(fixedCoord + offset, centerY, centerAlong);
+    glassMesh.position.set(fixedCoord, centerY, centerAlong);
+    frameMesh.position.set(fixedCoord, centerY, centerAlong);
   }}
   windowGroup.add(glassMesh);
   windowGroup.add(frameMesh);
@@ -1667,9 +1719,7 @@ function addWindowMesh(axis, fixedCoord, normalSign, centerAlong, centerY) {{
 function buildWallWithOpenings(group, totalLength, height, axis, fixedCoord, normalSign, baseX_or_Z, openings) {{
   const sorted = openings.slice().sort((a,b) => a.center - b.center);
   let cursor = 0;
-  function segCenterWorld(localStart, localLen) {{
-    return baseX_or_Z + localStart + localLen/2;
-  }}
+  function segCenterWorld(localStart, localLen) {{ return baseX_or_Z + localStart + localLen/2; }}
   const meshes = [];
   for (const op of sorted) {{
     const opStart = op.center - op.width/2 - baseX_or_Z;
@@ -1737,9 +1787,10 @@ function addGirtSegments(totalLength, gh, axis, fixedCoord, normalSign, baseX_or
   if (totalLength - cursor > 0.02) addSeg(cursor, totalLength - cursor);
 }}
 
-// ========== DEVORLARNI QURISH FUNKSIYASI ==========
+// ============================================================
+// DEVORLARNI QURISH - TUZATILGAN
+// ============================================================
 function buildAllWalls() {{
-  // Eski devorlarni tozalash
   while(wallGroup.children.length > 0) wallGroup.remove(wallGroup.children[0]);
   while(windowGroup.children.length > 0) windowGroup.remove(windowGroup.children[0]);
   while(doorGroup.children.length > 0) doorGroup.remove(doorGroup.children[0]);
@@ -1747,22 +1798,18 @@ function buildAllWalls() {{
   windowMeshes = [];
   doorMeshes = [];
 
-  // Old devor (Z = W) - old darvozalar
+  // ===== OLD DEVOR (Z = W) - FAQAT WIN_FRONT_POSITIONS =====
   {{
     const frontOpenings = DOOR_FRONT_POSITIONS.map(dx => ({{
       center: dx, width: DOOR_FRONT_W, sillY: 0, openHeight: DOOR_FRONT_H
     }}));
-    // Derazalarni qo'shish (faqat darvoza bilan to'g'ri kelmasa)
-    for (let wi = 0; wi < WIN_POSITIONS.length; wi++) {{
-      const wx = WIN_POSITIONS[wi][0];
-      const wy = WIN_POSITIONS[wi][1];
-      // Darvoza bilan to'g'ri kelishini tekshirish
+    // MUHIM: faqat WIN_FRONT_POSITIONS dagi derazalar
+    for (let wi = 0; wi < WIN_FRONT_POSITIONS.length; wi++) {{
+      const wx = WIN_FRONT_POSITIONS[wi][0];
+      const wy = WIN_FRONT_POSITIONS[wi][1];
       let blocked = false;
       for (const door of frontOpenings) {{
-        if (Math.abs(wx - door.center) < (WIN_W + DOOR_FRONT_W) / 2) {{
-          blocked = true;
-          break;
-        }}
+        if (Math.abs(wx - door.center) < (WIN_W + DOOR_FRONT_W) / 2) {{ blocked = true; break; }}
       }}
       if (!blocked) {{
         frontOpenings.push({{ center: wx, width: WIN_W, sillY: wy - WIN_H/2, openHeight: WIN_H }});
@@ -1774,20 +1821,18 @@ function buildAllWalls() {{
     wallGirtHeights.forEach(gh => addGirtSegments(L, gh, 'x', W, 1, 0, frontOpenings));
   }}
 
-  // Orqa devor (Z = 0) - orqa darvozalar
+  // ===== ORQA DEVOR (Z = 0) - FAQAT WIN_BACK_POSITIONS =====
   {{
     const backOpenings = DOOR_BACK_POSITIONS.map(dx => ({{
       center: dx, width: DOOR_BACK_W, sillY: 0, openHeight: DOOR_BACK_H
     }}));
-    for (let wi = 0; wi < WIN_POSITIONS.length; wi++) {{
-      const wx = WIN_POSITIONS[wi][0];
-      const wy = WIN_POSITIONS[wi][1];
+    // MUHIM: faqat WIN_BACK_POSITIONS dagi derazalar
+    for (let wi = 0; wi < WIN_BACK_POSITIONS.length; wi++) {{
+      const wx = WIN_BACK_POSITIONS[wi][0];
+      const wy = WIN_BACK_POSITIONS[wi][1];
       let blocked = false;
       for (const door of backOpenings) {{
-        if (Math.abs(wx - door.center) < (WIN_W + DOOR_BACK_W) / 2) {{
-          blocked = true;
-          break;
-        }}
+        if (Math.abs(wx - door.center) < (WIN_W + DOOR_BACK_W) / 2) {{ blocked = true; break; }}
       }}
       if (!blocked) {{
         backOpenings.push({{ center: wx, width: WIN_W, sillY: wy - WIN_H/2, openHeight: WIN_H }});
@@ -1799,18 +1844,17 @@ function buildAllWalls() {{
     wallGirtHeightsBack.forEach(gh => addGirtSegments(L, gh, 'x', 0, -1, 0, backOpenings));
   }}
 
-  // Chap devor (X = 0) - chap darvozalar
+  // ===== CHAP DEVOR (X = 0) =====
   {{
     const leftOpenings = DOOR_LEFT_POSITIONS.map(dz => ({{
       center: dz, width: DOOR_LEFT_W, sillY: 0, openHeight: DOOR_LEFT_H
     }}));
-    // Chap devorga deraza qo'yilmaydi (faqat old/orqa devorlarga)
     buildWallWithOpenings(wallGroup, W, H, 'z', 0, -1, 0, leftOpenings);
     const wallGirtHeightsLeft = [H * 0.18, H * 0.5, H * 0.82];
     wallGirtHeightsLeft.forEach(gh => addGirtSegments(W, gh, 'z', 0, -1, 0, leftOpenings));
   }}
 
-  // O'ng devor (X = L) - o'ng darvozalar
+  // ===== O'NG DEVOR (X = L) =====
   {{
     const rightOpenings = DOOR_RIGHT_POSITIONS.map(dz => ({{
       center: dz, width: DOOR_RIGHT_W, sillY: 0, openHeight: DOOR_RIGHT_H
@@ -1820,8 +1864,7 @@ function buildAllWalls() {{
     wallGirtHeightsRight.forEach(gh => addGirtSegments(W, gh, 'z', L, 1, 0, rightOpenings));
   }}
 
-  // ===== DARVOZALAR 3D MODELLARI =====
-  // Old darvozalar (Z = W)
+  // ===== DARVOZALAR =====
   const doorZ_front = W + T/2 + 0.04;
   DOOR_FRONT_POSITIONS.forEach((doorX) => {{
     const dw = Math.max(1.0, DOOR_FRONT_W);
@@ -1834,25 +1877,20 @@ function buildAllWalls() {{
       panel.position.set(doorX, (i + 0.5) * panelHeight, doorZ_front);
       panel.castShadow = true;
       doorGroup.add(panel);
-      doorMeshes.push(panel);
       for (let v = 0; v < 4; v++) {{
         const vertLine = new THREE.Mesh(new THREE.BoxGeometry(0.012, panelHeight - 0.04, panelThick + 0.01), matSteel);
         vertLine.position.set(doorX - panelWidth/2 + 0.15 + v * (panelWidth - 0.3)/3, (i + 0.5) * panelHeight, doorZ_front);
         doorGroup.add(vertLine);
-        doorMeshes.push(vertLine);
       }}
     }}
     const doorFrameOuter = new THREE.Mesh(new THREE.BoxGeometry(dw + 0.15, dh + 0.15, 0.08), matDoorFrame);
     doorFrameOuter.position.set(doorX, dh/2, W + T/2 + 0.01);
     doorGroup.add(doorFrameOuter);
-    doorMeshes.push(doorFrameOuter);
     const doorFrameInner = new THREE.Mesh(new THREE.BoxGeometry(dw - 0.02, dh - 0.02, 0.06), matSteel);
     doorFrameInner.position.set(doorX, dh/2, W + T/2 + 0.03);
     doorGroup.add(doorFrameInner);
-    doorMeshes.push(doorFrameInner);
   }});
 
-  // Orqa darvozalar (Z = 0)
   const doorZ_back = -T/2 - 0.04;
   DOOR_BACK_POSITIONS.forEach((doorX) => {{
     const dw = Math.max(1.0, DOOR_BACK_W);
@@ -1865,15 +1903,12 @@ function buildAllWalls() {{
       panel.position.set(doorX, (i + 0.5) * panelHeight, doorZ_back);
       panel.castShadow = true;
       doorGroup.add(panel);
-      doorMeshes.push(panel);
     }}
     const doorFrameOuter = new THREE.Mesh(new THREE.BoxGeometry(dw + 0.15, dh + 0.15, 0.08), matDoorFrame);
     doorFrameOuter.position.set(doorX, dh/2, -T/2 - 0.01);
     doorGroup.add(doorFrameOuter);
-    doorMeshes.push(doorFrameOuter);
   }});
 
-  // Chap darvozalar (X = 0)
   const doorX_left = -T/2 - 0.04;
   DOOR_LEFT_POSITIONS.forEach((doorZ) => {{
     const dw = Math.max(1.0, DOOR_LEFT_W);
@@ -1885,15 +1920,12 @@ function buildAllWalls() {{
       panel.position.set(doorX_left, (i + 0.5) * panelHeight, doorZ);
       panel.castShadow = true;
       doorGroup.add(panel);
-      doorMeshes.push(panel);
     }}
     const doorFrameOuter = new THREE.Mesh(new THREE.BoxGeometry(0.08, dh + 0.15, dw + 0.15), matDoorFrame);
     doorFrameOuter.position.set(-T/2 - 0.01, dh/2, doorZ);
     doorGroup.add(doorFrameOuter);
-    doorMeshes.push(doorFrameOuter);
   }});
 
-  // O'ng darvozalar (X = L)
   const doorX_right = L + T/2 + 0.04;
   DOOR_RIGHT_POSITIONS.forEach((doorZ) => {{
     const dw = Math.max(1.0, DOOR_RIGHT_W);
@@ -1905,29 +1937,24 @@ function buildAllWalls() {{
       panel.position.set(doorX_right, (i + 0.5) * panelHeight, doorZ);
       panel.castShadow = true;
       doorGroup.add(panel);
-      doorMeshes.push(panel);
     }}
     const doorFrameOuter = new THREE.Mesh(new THREE.BoxGeometry(0.08, dh + 0.15, dw + 0.15), matDoorFrame);
     doorFrameOuter.position.set(L + T/2 + 0.01, dh/2, doorZ);
     doorGroup.add(doorFrameOuter);
-    doorMeshes.push(doorFrameOuter);
   }});
 }}
 
-// Devorlarni qurish
 buildAllWalls();
 buildingGroup.add(wallGroup);
 buildingGroup.add(windowGroup);
 buildingGroup.add(doorGroup);
 
 // ============================================================
-// OB-HAVO VA ZILZILA SIMULYATSIYASI
+// WEATHER (qisqartirilgan)
 // ============================================================
 const WEATHER = {{
   snowOn: false, rainOn: false, windOn: false,
-  windSpeed: WIND_SPEED_BASE,
-  snowIntensity: SNOW_INTENSITY_BASE,
-  snowFallMult: 0.4,
+  windSpeed: WIND_SPEED_BASE, snowIntensity: SNOW_INTENSITY_BASE, snowFallMult: 0.4,
 }};
 
 function makeCircleTexture() {{
@@ -1946,34 +1973,25 @@ const circleTex = makeCircleTexture();
 const WX_MIN = -8, WX_MAX = L + 8, WZ_MIN = -8, WZ_MAX = W + 8;
 const WX_TOP = RIDGE_H + 12;
 
-// ============================================================
-// PARTICLE COUNT UPDATE FUNCTION
-// ============================================================
 function updateParticleCount(geometry, targetCount) {{
   const currentCount = geometry.attributes.position.count;
   if (currentCount === targetCount) return;
-  
   const stride = geometry.attributes.position.itemSize || 3;
   const newPos = new Float32Array(targetCount * stride);
   const oldPos = geometry.attributes.position.array;
-  
   for (let i = 0; i < targetCount; i++) {{
     if (i < currentCount && i * stride < oldPos.length) {{
-      for (let j = 0; j < stride; j++) {{
-        newPos[i*stride + j] = oldPos[i*stride + j];
-      }}
+      for (let j = 0; j < stride; j++) {{ newPos[i*stride + j] = oldPos[i*stride + j]; }}
     }} else {{
       newPos[i*stride] = WX_MIN + Math.random() * (WX_MAX - WX_MIN);
       newPos[i*stride+1] = Math.random() * WX_TOP;
       if (stride > 2) newPos[i*stride+2] = WZ_MIN + Math.random() * (WZ_MAX - WZ_MIN);
     }}
   }}
-  
   geometry.setAttribute('position', new THREE.BufferAttribute(newPos, stride));
   geometry.attributes.position.needsUpdate = true;
 }}
 
-// ---- QOR (1500 ta zarracha) ----
 let SNOW_COUNT = 1500;
 const snowGeo = new THREE.BufferGeometry();
 const snowPosArr = new Float32Array(SNOW_COUNT * 3);
@@ -1985,9 +2003,8 @@ for (let i = 0; i < SNOW_COUNT; i++) {{
   snowVelArr[i] = 0.6 + Math.random() * 0.8;
 }}
 snowGeo.setAttribute('position', new THREE.BufferAttribute(snowPosArr, 3));
-const snowMat = new THREE.PointsMaterial({{ 
-  size:0.22, map:circleTex, transparent:true, opacity:0.9, 
-  color:0xffffff, depthWrite:false, blending:THREE.NormalBlending 
+const snowMat = new THREE.PointsMaterial({{
+  size:0.22, map:circleTex, transparent:true, opacity:0.9, color:0xffffff, depthWrite:false, blending:THREE.NormalBlending
 }});
 const snowPoints = new THREE.Points(snowGeo, snowMat);
 snowPoints.visible = false;
@@ -2009,13 +2026,6 @@ function updateSnow(dt) {{
   snowGeo.attributes.position.needsUpdate = true;
 }}
 
-// Tom ustidagi qor qoplami
-const snowCapMat = new THREE.MeshStandardMaterial({{ 
-  color:0xffffff, roughness:0.85, metalness:0.0, 
-  transparent:true, opacity:0.0, depthWrite:false, side:THREE.DoubleSide 
-}});
-
-// ---- YOMG'IR (750 ta chiziq) ----
 let RAIN_COUNT = 750;
 const rainGeo = new THREE.BufferGeometry();
 const rainPosArr = new Float32Array(RAIN_COUNT * 6);
@@ -2050,7 +2060,6 @@ function updateRain(dt) {{
   rainGeo.attributes.position.needsUpdate = true;
 }}
 
-// ---- SHAMOL (250 ta zarracha) ----
 let WIND_COUNT = 250;
 const windGeo = new THREE.BufferGeometry();
 const windPosArr = new Float32Array(WIND_COUNT * 3);
@@ -2060,9 +2069,8 @@ for (let i = 0; i < WIND_COUNT; i++) {{
   windPosArr[i*3+2] = WZ_MIN + Math.random() * (WZ_MAX - WZ_MIN);
 }}
 windGeo.setAttribute('position', new THREE.BufferAttribute(windPosArr, 3));
-const windMat = new THREE.PointsMaterial({{ 
-  size:0.18, map:circleTex, transparent:true, opacity:0.6, 
-  color:0xb0c4de, depthWrite:false, blending:THREE.NormalBlending 
+const windMat = new THREE.PointsMaterial({{
+  size:0.18, map:circleTex, transparent:true, opacity:0.6, color:0xb0c4de, depthWrite:false, blending:THREE.NormalBlending
 }});
 const windPoints = new THREE.Points(windGeo, windMat);
 windPoints.visible = false;
@@ -2080,7 +2088,9 @@ function updateWind(dt) {{
   windGeo.attributes.position.needsUpdate = true;
 }}
 
-// ---- ZILZILA ----
+// ============================================================
+// EARTHQUAKE
+// ============================================================
 const quakeAmplitudeMap = {{7:0.05, 8:0.12, 9:0.25}};
 const quakeBaseAmplitude = (quakeAmplitudeMap[SEISMIC_ZONE_VAL] || 0.12) * Math.max(0.6, H / 7.5);
 const quakeFreq = 2.2;
@@ -2142,27 +2152,21 @@ function showQuakeResult() {{
   const failed = effectiveUtil > 100;
   if (failed) {{
     tintMembers(0xb71c1c);
-    el.innerHTML = '&#9888;&#65039; STRUKTURA YETARLI EMAS &mdash; effektiv band qilinish: ' + effectiveUtil.toFixed(0) + '% (zilzila kuchi: ' + quakeCurrentMagnitudePct + '%)';
+    el.innerHTML = 'WARNING: STRUCTURE INSUFFICIENT - effective utilization: ' + effectiveUtil.toFixed(0) + '%';
     el.style.background = 'rgba(198,40,40,0.95)';
   }} else {{
-    el.innerHTML = '&#9989; BARDOSH BERDI &mdash; effektiv band qilinish: ' + effectiveUtil.toFixed(0) + '% (zilzila kuchi: ' + quakeCurrentMagnitudePct + '%, zona ' + SEISMIC_ZONE_VAL + ')';
+    el.innerHTML = 'OK: STRUCTURE SURVIVED - effective utilization: ' + effectiveUtil.toFixed(0) + '%';
     el.style.background = 'rgba(46,125,50,0.95)';
   }}
   el.style.display = 'block';
 }}
 
-// ============================================================
-// Grid
-// ============================================================
 const grid = new THREE.GridHelper(Math.max(L, W) * 3, 40, 0xb8c2c8, 0xd6dde1);
 grid.position.set(L/2, 0.001, W/2);
 grid.material.transparent = true;
 grid.material.opacity = 0.4;
 scene.add(grid);
 
-// ============================================================
-// Labels
-// ============================================================
 function addLabel(txt, x, y, z, color) {{
   const d = document.createElement('div');
   d.textContent = txt;
@@ -2172,19 +2176,16 @@ function addLabel(txt, x, y, z, color) {{
   scene.add(lbl);
 }}
 
-addLabel(`Uzunlik: {L:.1f} m`, L/2, -0.3, -1.0, '#37474F');
-addLabel(`Kenglik: {W:.1f} m`, L + 1.5, -0.3, W/2, '#455A64');
-addLabel(`Balandlik: {H:.1f} m`, -1.5, H/2, W/2, '#546E7A');
-if (IS_PITCHED) addLabel(`Tizma: {ridge_height:.2f} m`, L/2, RIDGE_H + 0.5, HALF_W, '#607D8B');
+addLabel('Length: {L:.1f} m', L/2, -0.3, -1.0, '#37474F');
+addLabel('Width: {W:.1f} m', L + 1.5, -0.3, W/2, '#455A64');
+addLabel('Height: {H:.1f} m', -1.5, H/2, W/2, '#546E7A');
+if (IS_PITCHED) addLabel('Ridge: {ridge_height:.2f} m', L/2, RIDGE_H + 0.5, HALF_W, '#607D8B');
 
-// ============================================================
-// Camera views
-// ============================================================
 const VIEWS = {{
-  iso:   {{ p:[Math.max(L, 20)*1.1, Math.max(RIDGE_H, 10)*1.5, Math.max(W, 20)*1.6], t:[L/2, H/2, W/2] }},
-  front: {{ p:[L/2, H*0.8, W + Math.max(W, 20)*1.2], t:[L/2, H/2, W/2] }},
-  side:  {{ p:[-Math.max(L, 20)*1.2, H*0.8, W/2], t:[L/2, H/2, W/2] }},
-  top:   {{ p:[L/2, Math.max(RIDGE_H, 10)*2.5, W/2], t:[L/2, 0, W/2] }},
+  iso:   {{ p:[Math.max(L, 20)*1.2, Math.max(RIDGE_H, 10)*1.6, Math.max(W, 20)*1.8], t:[L/2, H/2, W/2] }},
+  front: {{ p:[L/2, H*0.8, W + Math.max(W, 20)*1.4], t:[L/2, H/2, W/2] }},
+  side:  {{ p:[-Math.max(L, 20)*1.4, H*0.8, W/2], t:[L/2, H/2, W/2] }},
+  top:   {{ p:[L/2, Math.max(RIDGE_H, 10)*3.0, W/2], t:[L/2, 0, W/2] }},
   inside:{{ p:[L/2, H*0.5, W*0.3], t:[L/2, H*0.5, W*0.8] }}
 }};
 
@@ -2221,23 +2222,17 @@ document.getElementById('chkTruss').addEventListener('change', e => trussGroup.v
 document.getElementById('chkWin').addEventListener('change', e => windowGroup.visible = e.target.checked);
 document.getElementById('chkDoor').addEventListener('change', e => doorGroup.visible = e.target.checked);
 
-// ============================================================
-// WEATHER UPDATE FUNCTIONS
-// ============================================================
 function updateSnowVisual() {{
   const pct = parseInt(document.getElementById('sldSnow').value, 10);
   document.getElementById('valSnow').textContent = pct + '%';
   WEATHER.snowOn = pct > 0;
   WEATHER.snowIntensity = SNOW_INTENSITY_BASE * (pct / 100);
   WEATHER.snowFallMult = 0.4 + (pct / 100) * 1.6;
-  
   const targetCount = Math.round(200 + (pct / 100) * 2800);
   updateParticleCount(snowGeo, targetCount);
-  
   snowPoints.visible = WEATHER.snowOn;
   snowMat.opacity = WEATHER.snowOn ? Math.min(1.0, 0.3 + WEATHER.snowIntensity * 0.7) : 0.0;
   snowMat.size = 0.15 + (pct / 100) * 0.25;
-  snowCapMat.opacity = WEATHER.snowOn ? Math.min(0.95, 0.1 + WEATHER.snowIntensity * 0.65) : 0.0;
 }}
 
 function updateRainVisual() {{
@@ -2245,10 +2240,8 @@ function updateRainVisual() {{
   document.getElementById('valRain').textContent = pct + '%';
   WEATHER.rainOn = pct > 0;
   WEATHER.rainIntensity = pct / 100;
-  
   const targetCount = Math.round(100 + (pct / 100) * 1400);
   updateParticleCount(rainGeo, targetCount);
-  
   rainLines.visible = WEATHER.rainOn;
   rainMat.opacity = WEATHER.rainOn ? Math.min(1.0, 0.2 + WEATHER.rainIntensity * 0.6) : 0.0;
 }}
@@ -2258,10 +2251,8 @@ function updateWindVisual() {{
   document.getElementById('valWind').textContent = pct + '%';
   WEATHER.windOn = pct > 0;
   WEATHER.windSpeed = Math.max(WIND_SPEED_BASE, 0.4) * (pct / 100);
-  
   const targetCount = Math.round(30 + (pct / 100) * 270);
   updateParticleCount(windGeo, targetCount);
-  
   windPoints.visible = WEATHER.windOn;
   windMat.opacity = WEATHER.windOn ? Math.min(0.8, 0.2 + (pct / 100) * 0.5) : 0.0;
   windMat.size = 0.10 + (pct / 100) * 0.25;
@@ -2278,37 +2269,25 @@ document.getElementById('sldWind').addEventListener('input', updateWindVisual);
 document.getElementById('sldQuake').addEventListener('input', updateQuakeSliderLabel);
 updateSnowVisual(); updateRainVisual(); updateWindVisual(); updateQuakeSliderLabel();
 
-document.getElementById('btnQuake').addEventListener('click', () => {{
-  startEarthquake();
-}});
+document.getElementById('btnQuake').addEventListener('click', () => {{ startEarthquake(); }});
 
 // ============================================================
-// DRAG & DROP - Interaktiv joylashuvni o'zgartirish
+// DRAG & DROP
 // ============================================================
 let dragMode = false;
 let dragTarget = null;
 let dragStartMouse = null;
 let dragStartPos = null;
-let dragElement = null;
-let dragAxis = 'x';
-let dragWall = 'front';
 
 document.getElementById('btnDragMode').addEventListener('click', function() {{
   dragMode = !dragMode;
-  this.textContent = dragMode ? ' siljitish faol' : 'siljitish';
+  this.textContent = dragMode ? 'Drag Active' : 'Drag';
   this.style.background = dragMode ? '#4CAF50' : '#ff5722';
-  if (dragMode) {{
-    createDragMarkers();
-  }} else {{
-    removeDragMarkers();
-  }}
+  if (dragMode) {{ createDragMarkers(); }} else {{ removeDragMarkers(); }}
 }});
 
 function createDragMarkers() {{
-  // Oldingi markerlarni tozalash
   removeDragMarkers();
-  
-  // Darvozalar uchun markerlar
   DOOR_FRONT_POSITIONS.forEach((x, i) => {{
     const marker = document.createElement('div');
     marker.className = 'drag-marker door';
@@ -2316,12 +2295,11 @@ function createDragMarkers() {{
     marker.dataset.wall = 'front';
     marker.dataset.index = i;
     marker.dataset.x = x;
-    marker.title = `Old darvoza ${i+1}`;
+    marker.title = 'Front door ' + (i+1);
     document.body.appendChild(marker);
     positionMarker(marker, x, W, 'front');
     addDragEvents(marker);
   }});
-  
   DOOR_BACK_POSITIONS.forEach((x, i) => {{
     const marker = document.createElement('div');
     marker.className = 'drag-marker door';
@@ -2329,13 +2307,11 @@ function createDragMarkers() {{
     marker.dataset.wall = 'back';
     marker.dataset.index = i;
     marker.dataset.x = x;
-    marker.title = `Orqa darvoza ${i+1}`;
+    marker.title = 'Back door ' + (i+1);
     document.body.appendChild(marker);
     positionMarker(marker, x, 0, 'back');
     addDragEvents(marker);
   }});
-  
-
 }}
 
 function removeDragMarkers() {{
@@ -2344,25 +2320,20 @@ function removeDragMarkers() {{
 }}
 
 function positionMarker(marker, x, z, wall) {{
-  // 3D pozitsiyani 2D ekran koordinatasiga o'tkazish
   const worldPos = new THREE.Vector3(x, H * 0.5, z);
   const vector = worldPos.clone().project(camera);
   const widthHalf = window.innerWidth / 2;
   const heightHalf = window.innerHeight / 2;
   const px = (vector.x * widthHalf) + widthHalf;
   const py = -(vector.y * heightHalf) + heightHalf;
-  
-  marker.style.left = px - 6 + 'px';
-  marker.style.top = py - 6 + 'px';
-  
-  // Yorliq qo'shish
+  marker.style.left = px + 'px';
+  marker.style.top = py + 'px';
   const label = document.createElement('div');
   label.className = 'drag-label';
-  label.textContent = marker.dataset.type === 'door' ? 'darvoza' : 'darvoza';
-  label.style.left = px - 6 + 'px';
-  label.style.top = py - 20 + 'px';
+  label.textContent = marker.dataset.type === 'door' ? 'D' : ' ';
+  label.style.left = px + 'px';
+  label.style.top = (py - 20) + 'px';
   document.body.appendChild(label);
-  marker.dataset.labelId = label.id || (label.id = 'label_' + Math.random());
 }}
 
 function addDragEvents(marker) {{
@@ -2372,12 +2343,7 @@ function addDragEvents(marker) {{
     e.stopPropagation();
     dragTarget = this;
     dragStartMouse = {{x: e.clientX, y: e.clientY}};
-    dragStartPos = {{
-      x: parseFloat(this.dataset.x),
-      y: parseFloat(this.dataset.y || 0)
-    }};
-    dragWall = this.dataset.wall || 'front';
-    dragAxis = this.dataset.type === 'window' ? 'x' : 'x';
+    dragStartPos = {{ x: parseFloat(this.dataset.x), y: parseFloat(this.dataset.y || 0) }};
     this.style.cursor = 'grabbing';
   }});
 }}
@@ -2385,72 +2351,31 @@ function addDragEvents(marker) {{
 document.addEventListener('mousemove', function(e) {{
   if (!dragMode || !dragTarget) return;
   e.preventDefault();
-  
   const dx = (e.clientX - dragStartMouse.x) / 200 * L;
   const newX = Math.max(0.5, Math.min(L - 0.5, dragStartPos.x + dx));
-  
-  const type = dragTarget.dataset.type;
   const index = parseInt(dragTarget.dataset.index);
+  const wall = dragTarget.dataset.wall;
   
-  if (type === 'door') {{
-    const wall = dragTarget.dataset.wall;
-    if (wall === 'front') {{
-      // Darvoza boshqa darvozalar va derazalar bilan to'g'ri kelmasligini tekshirish
-      let blocked = false;
-      for (let i = 0; i < DOOR_FRONT_POSITIONS.length; i++) {{
-        if (i !== index && Math.abs(DOOR_FRONT_POSITIONS[i] - newX) < DOOR_FRONT_W) {{
-          blocked = true;
-          break;
-        }}
-      }}
-      if (!blocked) {{
-        DOOR_FRONT_POSITIONS[index] = newX;
-        dragTarget.dataset.x = newX;
-        positionMarker(dragTarget, newX, W, 'front');
-        rebuildBuilding();
-      }}
-    }} else if (wall === 'back') {{
-      let blocked = false;
-      for (let i = 0; i < DOOR_BACK_POSITIONS.length; i++) {{
-        if (i !== index && Math.abs(DOOR_BACK_POSITIONS[i] - newX) < DOOR_BACK_W) {{
-          blocked = true;
-          break;
-        }}
-      }}
-      if (!blocked) {{
-        DOOR_BACK_POSITIONS[index] = newX;
-        dragTarget.dataset.x = newX;
-        positionMarker(dragTarget, newX, 0, 'back');
-        rebuildBuilding();
-      }}
-    }}
-  }} else if (type === 'window') {{
+  if (wall === 'front') {{
     let blocked = false;
-    // Deraza darvozalar bilan to'g'ri kelmasligini tekshirish
-    for (const doorX of DOOR_FRONT_POSITIONS) {{
-      if (Math.abs(newX - doorX) < (WIN_W + DOOR_FRONT_W) / 2) {{
-        blocked = true;
-        break;
-      }}
+    for (let i = 0; i < DOOR_FRONT_POSITIONS.length; i++) {{
+      if (i !== index && Math.abs(DOOR_FRONT_POSITIONS[i] - newX) < DOOR_FRONT_W) {{ blocked = true; break; }}
     }}
-    for (const doorX of DOOR_BACK_POSITIONS) {{
-      if (Math.abs(newX - doorX) < (WIN_W + DOOR_BACK_W) / 2) {{
-        blocked = true;
-        break;
-      }}
-    }}
-    // Deraza ustunlar orasida ekanligini tekshirish
-    let onColumn = false;
-    for (const interval of columnIntervals) {{
-      if (newX >= interval.start + 0.3 && newX <= interval.end - 0.3) {{
-        onColumn = true;
-        break;
-      }}
-    }}
-    if (!blocked && onColumn) {{
-      WIN_POSITIONS[index][0] = newX;
+    if (!blocked) {{
+      DOOR_FRONT_POSITIONS[index] = newX;
       dragTarget.dataset.x = newX;
       positionMarker(dragTarget, newX, W, 'front');
+      rebuildBuilding();
+    }}
+  }} else if (wall === 'back') {{
+    let blocked = false;
+    for (let i = 0; i < DOOR_BACK_POSITIONS.length; i++) {{
+      if (i !== index && Math.abs(DOOR_BACK_POSITIONS[i] - newX) < DOOR_BACK_W) {{ blocked = true; break; }}
+    }}
+    if (!blocked) {{
+      DOOR_BACK_POSITIONS[index] = newX;
+      dragTarget.dataset.x = newX;
+      positionMarker(dragTarget, newX, 0, 'back');
       rebuildBuilding();
     }}
   }}
@@ -2466,25 +2391,13 @@ document.addEventListener('mouseup', function(e) {{
 }});
 
 function rebuildBuilding() {{
-  // Devorlar, derazalar va eshiklarni qayta qurish
-  // Eski ob'ektlarni tozalash
   while(wallGroup.children.length > 0) wallGroup.remove(wallGroup.children[0]);
   while(windowGroup.children.length > 0) windowGroup.remove(windowGroup.children[0]);
   while(doorGroup.children.length > 0) doorGroup.remove(doorGroup.children[0]);
-  
-  // Yangi devorlarni qurish
   buildAllWalls();
-  
-  // Markerlarni yangilash
-  if (dragMode) {{
-    removeDragMarkers();
-    createDragMarkers();
-  }}
+  if (dragMode) {{ removeDragMarkers(); createDragMarkers(); }}
 }}
 
-// ============================================================
-// Resize
-// ============================================================
 window.addEventListener('resize', () => {{
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
@@ -2492,9 +2405,6 @@ window.addEventListener('resize', () => {{
   lblRen.setSize(innerWidth, innerHeight);
 }});
 
-// ============================================================
-// Animation loop
-// ============================================================
 let __lastFrameTime = performance.now();
 (function animate() {{
   requestAnimationFrame(animate);
@@ -2510,18 +2420,14 @@ let __lastFrameTime = performance.now();
   lblRen.render(scene, camera);
 }})();
 
-window.addEventListener('load', () => {{
-  const l = document.getElementById('loading');
-  if (l) l.style.display = 'none';
-}});
-setTimeout(() => {{
-  const l = document.getElementById('loading');
-  if (l) l.style.display = 'none';
-}}, 1200);
+window.addEventListener('load', () => {{ const l = document.getElementById('loading'); if (l) l.style.display = 'none'; }});
+setTimeout(() => {{ const l = document.getElementById('loading'); if (l) l.style.display = 'none'; }}, 1200);
 </script>
 </body>
 </html>"""
     return html
+
+
 
 def calculate_door_positions(length, count, door_width):
     """Darvozalar joylashuvini hisoblash"""
@@ -2539,14 +2445,39 @@ def calculate_door_positions(length, count, door_width):
                 positions.append(seg * (i + 0.5))
     return positions
 
+def compute_column_layout(L, W, column_spacing=4):
+    """Ustunlar joylashuvini hisoblash"""
+    n_cols_x = max(2, int(L / column_spacing) + 1)
+    n_cols_z = max(2, int(W / column_spacing) + 1)
+    spacing_x = L / (n_cols_x - 1) if n_cols_x > 1 else L
+    spacing_z = W / (n_cols_z - 1) if n_cols_z > 1 else W
+    return {
+        "n_cols_x": n_cols_x,
+        "n_cols_z": n_cols_z,
+        "spacing_x": spacing_x,
+        "spacing_z": spacing_z
+    }
+
+
+
 
 
 
 
 def calculate_construction_materials(params):
-    """Bitta params dict qabul qiladigan versiya - LMK/LSTK bilan"""
+    """
+    Darslik asosida to'g'rilangan materiallar hisobi
+    Metall konstruksiyalari (maxsus kurs) darsligi:
+    - II.2-band (Fermalarning og'irligi)
+    - VIII.3-band (Ustunlar joylashuvi)
+    - VIII.5-VIII.7-bandlar (Ustun, tosin, bog'lamalar)
+    - IX.4-band (Rezervuarlar - beton poydevor)
+    - X-bob (Beton konstruksiyalar)
+    """
     
-    # Parametrlarni olish
+    # ============================================================
+    # 1. PARAMETRLARNI O'QIB OLAMIZ
+    # ============================================================
     L = params.get("L", 30)
     W = params.get("W", 15)
     H = params.get("H", 7.5)
@@ -2582,6 +2513,7 @@ def calculate_construction_materials(params):
     window_width = params.get("window_width", 2.5)
     window_height = params.get("window_height", 2.0)
     
+    # Narxlar
     wall_price = params.get("wall_price", 35)
     roof_price = params.get("roof_price", 45)
     floor_price = params.get("floor_price", 45)
@@ -2601,13 +2533,17 @@ def calculate_construction_materials(params):
     shipyak_price = params.get("price_shipyak", 30)
     labor_percent = params.get("labor_percent", 32)
     
+    # ✅ YANGI: Pol qalinligini olish (foydalanuvchi kiritgan)
+    floor_thickness_cm = params.get("floor_thickness_cm", 15)  # default 15 sm
+    floor_thickness_m = floor_thickness_cm / 100  # metrga o'tkazish
+    
     pitch_rad = math.radians(roof_pitch)
     roof_multiplier = 1 / math.cos(pitch_rad) if roof_pitch > 0 else 1.0
     
     # ============================================================
-    # 1. PANEL O'LCHAMLARI - BALANDLIKKA QARAB
+    # 2. PANEL O'LCHAMLARI
     # ============================================================
-    MAX_PANEL_HEIGHT = 12.0  # Standart panel uzunligi
+    MAX_PANEL_HEIGHT = 12.0
     
     if H > MAX_PANEL_HEIGHT:
         panel_sections = math.ceil(H / MAX_PANEL_HEIGHT)
@@ -2621,7 +2557,7 @@ def calculate_construction_materials(params):
     PANEL_WIDTH = 1.0
     
     # ============================================================
-    # 2. DEVOR MAYDONLARI
+    # 3. DEVOR MAYDONLARI
     # ============================================================
     front_wall_area = L * H
     front_door_area = door_front_count * (door_front_width * door_front_height)
@@ -2651,7 +2587,7 @@ def calculate_construction_materials(params):
     total_wall_panels = front_panels + back_panels + left_panels + right_panels
     
     # ============================================================
-    # 3. FRONTON
+    # 4. FRONTON (Darslik II.1-band)
     # ============================================================
     if roof_pitch > 0 and W > 0:
         ridge_rise = (W / 2) * math.tan(pitch_rad)
@@ -2666,7 +2602,7 @@ def calculate_construction_materials(params):
     roof_area = L * W * roof_multiplier
     
     # ============================================================
-    # 4. TOM PANELLARI
+    # 5. TOM PANELLARI (Darslik II.2-band)
     # ============================================================
     if roof_pitch > 0 and W > 0:
         roof_panels = math.ceil(L / PANEL_WIDTH) * 2
@@ -2674,7 +2610,7 @@ def calculate_construction_materials(params):
         roof_panels = math.ceil(L / PANEL_WIDTH) * math.ceil(W / PANEL_WIDTH)
     
     # ============================================================
-    # 5. POL PANELLARI
+    # 6. POL PANELLARI
     # ============================================================
     if floor_panel_mode:
         floor_panels = math.ceil(L / PANEL_WIDTH) * math.ceil(W / PANEL_WIDTH)
@@ -2682,14 +2618,12 @@ def calculate_construction_materials(params):
         floor_panels = 0
     
     # ============================================================
-    # 6. METALL HISOBI
+    # 7. METALL HISOBI (Darslik II.2, VIII.5-VIII.7-bandlar)
     # ============================================================
     metal = compute_metal_quantities(L, W, H, roof_pitch, column_spacing, system_type)
-
-
     
     # ============================================================
-    # 7. NARXLAR
+    # 8. NARXLAR
     # ============================================================
     column_cost = metal["column_tonna"] * price_column
     beam_cost = metal["beam_tonna"] * price_beam
@@ -2716,21 +2650,46 @@ def calculate_construction_materials(params):
     )
     door_cost_total = total_door_area * door_price
     
-    foundation_concrete = metal["total_columns"] * 1.0 * (1 + (H - 7.5) * 0.02 if H > 7.5 else 1.0)
-    floor_concrete = floor_area * 0.15
+    # ============================================================
+    # 9. BETON HISOBI (Darslik IX.4-band, X-bob)
+    # ============================================================
+    # Darslik IX.4-band: Rezervuar tubi va poydevori
+    # Har bir ustun uchun poydevor betoni
+    foundation_concrete = metal["total_columns"] * 1.0
+    
+    # ✅ TO'G'RILANGAN: Pol betoni - foydalanuvchi kiritgan qalinlik
+    # Darslik X-bob: Sanoat binolari pol qalinligi 150-200 mm
+    # Endi foydalanuvchi 5-50 sm oralig'ida o'zi kiritadi
+    floor_concrete = floor_area * floor_thickness_m
+    
+    # Jami beton
     total_concrete = foundation_concrete + floor_concrete
     
+    # ============================================================
+    # 10. MATERIALLAR TARKIBI
+    # ============================================================
     concrete_cost = total_concrete * concrete_price
-    rebar_kg = total_concrete * 55
+    
+    # Armatura - Darslik X.2-band: 55-60 kg/m³
+    # Sanoat binolari uchun o'rtacha 55 kg/m³
+    REBAR_PER_M3 = 55
+    rebar_kg = total_concrete * REBAR_PER_M3
     rebar_cost = rebar_kg * rebar_price
+    
+    # Beton tarkibi (1 m³ beton uchun standart nisbatlar)
+    # Sement: 320 kg, Qum: 0.55 m³, Shag'al: 0.75 m³
     sand_m3 = total_concrete * 0.55
     gravel_m3 = total_concrete * 0.75
+    cement_kg = total_concrete * 320
+    
     sand_cost = sand_m3 * sand_price
     gravel_cost = gravel_m3 * gravel_price
-    cement_kg = total_concrete * 320
     cement_cost = cement_kg * cement_price
     shipyak_cost = floor_area * shipyak_price
     
+    # ============================================================
+    # 11. UMUMIY NARX
+    # ============================================================
     material_total = (
         metal_karkas_cost + wall_cost + gable_wall_cost + roof_cost + floor_cost +
         concrete_cost + rebar_cost + window_cost_total + door_cost_total +
@@ -2739,6 +2698,9 @@ def calculate_construction_materials(params):
     labor_cost = material_total * (labor_percent / 100)
     total_cost = material_total + labor_cost
     
+    # ============================================================
+    # 12. NATIJALARNI QAYTARISH
+    # ============================================================
     return {
         "floor_area_m2": round(floor_area, 1),
         "wall_area_m2": round(2 * (L + W) * H, 1),
@@ -2772,11 +2734,14 @@ def calculate_construction_materials(params):
         "window_area_m2": round(total_window_area, 1),
         "door_area_m2": round(total_door_area, 1),
         
+        # ✅ TO'G'RILANGAN: Beton va armatura
         "concrete_volume_m3": round(total_concrete, 1),
         "sand_m3": round(sand_m3, 1),
         "gravel_m3": round(gravel_m3, 1),
         "cement_kg": round(cement_kg),
         "rebar_kg": round(rebar_kg),
+        "floor_thickness_cm": floor_thickness_cm,  # ✅ QAYTARISHGA QO'SHILDI
+        "floor_thickness_m": round(floor_thickness_m, 3),
         
         "total_columns": metal["total_columns"],
         "truss_count": metal["truss_count"],
@@ -2829,6 +2794,12 @@ def calculate_construction_materials(params):
         "service_life": metal.get("service_life", 50),
         "corrosion_protection": metal.get("corrosion_protection", False),
     }
+
+
+
+
+
+
 
 def compute_purlins(L, W, H, roof_pitch, purlin_profile="Profil 120x60x4 mm", 
                     wall_purlin_profile="Profil 100x50x4 mm", 
@@ -2975,19 +2946,19 @@ def compute_bracing(L, W, H, seismic_zone, wind_region="B"):
         "total_tonna": round(total_kg / 1000, 3)
     }
 
-def compute_connections(metal_kg, connection_type="mixed"):
+def compute_connections(metal_kg, connection_type="welded"):
     """
     Darslik I.1-band asosida birikma detallari hisobi
     """
-    # Darslik I.1-band: payvand birikma 4%, boltli birikma 6.5%
+    # Darslik 1.1-jadval: payvand birikma 4%, boltli birikma 6.5%
     coefficients = {
-        "bolted": {"default": 0.065},
-        "welded": {"default": 0.05},
-        "mixed": {"default": 0.08}
+        "welded": {"default": 0.04},   # ✅ LMK uchun 4% (darslik bo'yicha)
+        "bolted": {"default": 0.065},  # ✅ Boltli uchun 6.5%
+        "mixed": {"default": 0.06}     # ✅ Aralash uchun 6%
     }
-    coeff = coefficients.get(connection_type, coefficients["mixed"])
+    coeff = coefficients.get(connection_type, coefficients["welded"])
     
-    # ✅ TO'G'RILANGAN: faqat asosiy metall asosida
+    # ✅ FAQAT ASOSIY METALL ASOSIDA (bog'lamalarsiz)
     weight_kg = metal_kg * coeff["default"]
     
     return {
@@ -3819,17 +3790,56 @@ def construction_sidebar():
             help="Ustunlar orasidagi masofa. Kichik qiymat - ko'proq ustun, katta qiymat - kamroq ustun"
         )
     
+def construction_sidebar():
+    st.sidebar.title("Qurilish Konfiguratori")
+
+    with st.sidebar.expander("Loyiha malumotlari", expanded=True):
+        construction_type = st.selectbox("Bino turi", list(construction_types.keys()), key="construction_type")
+        name = st.text_input("Loyiha nomi", value="Yangi Angar Loyihasi", key="cons_name")
+        code = st.text_input("Loyiha kodi", value=f"ANG-{datetime.now().strftime('%Y%m%d')}-001", key="cons_code")
+
+    with st.sidebar.expander("Asosiy olchamlar", expanded=True):
+        col1, col2 = st.columns(2)
+        with col1:
+            L = st.number_input("Uzunlik (m)", min_value=0.0, value=30.0, step=1.0, key="cons_L")
+            H = st.number_input("Balandlik (m)", min_value=0.0, value=7.5, step=0.5, key="cons_H")
+        with col2:
+            W = st.number_input("Kenglik (m)", min_value=5.0, value=15.0, step=1.0, key="cons_W")
+            roof_pitch = st.slider("Tom qiyaligi (gradus)", 0.0, 45.0, 12.0, 1.0, key="cons_roof_pitch")
+        column_spacing = st.slider(
+            "Ustunlar oralig'i (m)", 
+            min_value=3.0, 
+            max_value=12.0, 
+            value=8.5, 
+            step=0.250, 
+            key="cons_column_spacing",
+            help="Ustunlar orasidagi masofa. Kichik qiymat - ko'proq ustun, katta qiymat - kamroq ustun"
+        )
+    
         with st.sidebar.expander("Materiallar", expanded=True):
             wall_type = st.selectbox("Devor turi", list(wall_materials.keys()), key="cons_wall")
             wall_thickness = st.selectbox("Devor qalinligi", wall_materials[wall_type]["qalinlik"], key="cons_thick")
+            
             floor_type = st.selectbox("Pol turi", list(floor_materials.keys()), key="cons_floor")
+            
+            # ✅ YANGI: Pol qalinligi - foydalanuvchi kiritadi
+            floor_thickness_cm = st.number_input(
+                "Pol betoni qalinligi (sm)", 
+                min_value=0.0, 
+                max_value=100.0, 
+                value=10.0, 
+                step=0.1,
+                key="cons_floor_thickness",
+                help="Sanoat betoni uchun standart 15 sm. Yengil omborlar 10 sm, og'ir sanoat 20-25 sm."
+            )
+            
             roof_type = st.selectbox("Tom turi", list(roof_materials.keys()), key="cons_roof")
             floor_panel_mode = st.checkbox(
                 "Pol panel sifatida hisobla", 
-                value=False,  # ✅ Default False
+                value=False,
                 key="cons_floor_panel"
             )
-    # ===== YANGI: PROFIL TANLASH =====
+            
             st.divider()
             st.markdown("#### Progonlar profillari")
             
@@ -3837,7 +3847,7 @@ def construction_sidebar():
             purlin_profile = st.selectbox(
                 "Tom progonlari (GOST 8645-68)",
                 options=get_profile_list("purlin"),
-                index=3,  # "Profil 120x60x4 mm" indeksi
+                index=3,
                 key="purlin_profile_select"
             )
             
@@ -3845,7 +3855,7 @@ def construction_sidebar():
             wall_purlin_profile = st.selectbox(
                 "Devor progonlari (GOST 8645-68)",
                 options=get_profile_list("purlin"),
-                index=2,  # "Profil 100x50x4 mm" indeksi
+                index=2,
                 key="wall_purlin_profile_select"
             )
             
@@ -3853,7 +3863,7 @@ def construction_sidebar():
             bracing_profile = st.selectbox(
                 "Bog'lamalar (Shveller GOST 8240-97)",
                 options=get_profile_list("bracing"),
-                index=2,  # "Shveller 14P" indeksi
+                index=2,
                 key="bracing_profile_select"
             )
             
@@ -3861,8 +3871,203 @@ def construction_sidebar():
             st.caption(f"Tom progonlari: {purlin_profile} ({get_profile_weight('purlin', purlin_profile)} kg/m)")
             st.caption(f"Devor progonlari: {wall_purlin_profile} ({get_profile_weight('purlin', wall_purlin_profile)} kg/m)")
             st.caption(f"Bog'lamalar: {bracing_profile} ({get_profile_weight('bracing', bracing_profile)} kg/m)")
-        # construction_sidebar() funksiyasiga qo'shing (taxminan 2200-qator atrofida)
 
+    with st.sidebar.expander("Konstruksiya turi", expanded=True):
+        construction_system = st.radio(
+            "Metall karkas turi",
+            options=[
+                "LSTK (Yengil Po'lat)",
+                "LMK (Yengil Metall)", 
+                "OG'IR METALL (Heavy Steel)"
+            ],
+            index=1,
+            key="construction_system",
+            help="""
+            **LSTK**: Yupqa sinklangan po'lat (0.7-4mm), vintli birikma, angar/omborlar
+            **LMK**: Qalin metall (8-40mm), payvandlash/boltlar, katta oraliqli binolar
+            **OG'IR METALL**: Qalin H-tavrli profillar (10-60mm), og'ir kranlar va sanoat binolari uchun
+            """
+        )
+
+    with st.sidebar.expander("Derazalar (har devor uchun)", expanded=False):
+        st.caption("Old fasad (darvozalar tomon)")
+        col_w1, col_w2 = st.columns(2)
+        with col_w1:
+            w_front = st.number_input("Old deraza soni", min_value=0, max_value=50, value=3, key="win_front")
+        with col_w2:
+            w_back = st.number_input("Orqa deraza soni", min_value=0, max_value=50, value=3, key="win_back")
+        col_w3, col_w4 = st.columns(2)
+        with col_w3:
+            w_left = st.number_input("Chap deraza soni", min_value=0, max_value=50, value=0, key="win_left")
+        with col_w4:
+            w_right = st.number_input("O'ng deraza soni", min_value=0, max_value=50, value=0, key="win_right")
+        
+        col_ws1, col_ws2 = st.columns(2)
+        with col_ws1:
+            window_width = st.number_input("Deraza eni (m)", min_value=0.5, max_value=25.0, value=2.5, step=0.1, key="cons_win_w")
+        with col_ws2:
+            window_height = st.number_input("Deraza boyi (m)", min_value=0.5, max_value=40.0, value=2.0, step=0.1, key="cons_win_h")
+
+    with st.sidebar.expander("Darvozalar", expanded=False):
+        st.markdown("#### Old devor (Z=W)")
+        col_d1, col_d2 = st.columns(2)
+        with col_d1:
+            door_front_count = st.number_input("Old darvoza soni", min_value=0, max_value=20, value=1, key="door_front")
+        with col_d2:
+            door_front_width = st.number_input("Old darvoza eni (m)", min_value=2.0, max_value=20.0, value=12.0, step=1.0, key="door_front_w")
+            door_front_height = st.number_input("Old darvoza boyi (m)", min_value=2.0, max_value=10.0, value=6.5, step=0.5, key="door_front_h")
+
+        st.markdown("#### Orqa devor (Z=0)")
+        col_d3, col_d4 = st.columns(2)
+        with col_d3:
+            door_back_count = st.number_input("Orqa darvoza soni", min_value=0, max_value=20, value=0, key="door_back")
+        with col_d4:
+            door_back_width = st.number_input("Orqa darvoza eni (m)", min_value=0.0, max_value=20.0, value=12.0, step=1.0, key="door_back_w")
+            door_back_height = st.number_input("Orqa darvoza boyi (m)", min_value=0.0, max_value=10.0, value=6.5, step=0.5, key="door_back_h")
+
+        st.markdown("#### Chap devor (X=0)")
+        col_d5, col_d6 = st.columns(2)
+        with col_d5:
+            door_left_count = st.number_input("Chap darvoza soni", min_value=0, max_value=20, value=0, key="door_left")
+        with col_d6:
+            door_left_width = st.number_input("Chap darvoza eni (m)", min_value=0.0, max_value=20.0, value=5.0, step=1.0, key="door_left_w")
+            door_left_height = st.number_input("Chap darvoza boyi (m)", min_value=0.0, max_value=10.0, value=4.0, step=0.5, key="door_left_h")
+
+        st.markdown("#### O'ng devor (X=L)")
+        col_d7, col_d8 = st.columns(2)
+        with col_d7:
+            door_right_count = st.number_input("O'ng darvoza soni", min_value=0, max_value=20, value=0, key="door_right")
+        with col_d8:
+            door_right_width = st.number_input("O'ng darvoza eni (m)", min_value=0.0, max_value=20.0, value=5.0, step=1.0, key="door_right_w")
+            door_right_height = st.number_input("O'ng darvoza boyi (m)", min_value=0.0, max_value=10.0, value=4.0, step=0.5, key="door_right_h")
+
+    with st.sidebar.expander("NARXLAR (1 tonna/$)", expanded=True):
+        st.markdown("#### Metall narxlari")
+        col_m1, col_m2 = st.columns(2)
+        with col_m1:
+            price_column = st.number_input("Ustunlar", min_value=0.0, max_value=5000.0, value=950.0, step=50.0, key="price_metal_column")
+            price_truss = st.number_input("Fermalar", min_value=0.0, max_value=5000.0, value=950.0, step=50.0, key="price_metal_truss")
+            price_purlins = st.number_input("Progonlar", min_value=0.0, max_value=5000.0, value=950.0, step=50.0, key="price_metal_purlins")
+        with col_m2:
+            price_beam = st.number_input("Tosinlar", min_value=0.0, max_value=5000.0, value=950.0, step=50.0, key="price_metal_beam")
+            price_longitudinal = st.number_input("Uzunasiga", min_value=0.0, max_value=5000.0, value=950.0, step=50.0, key="price_metal_longitudinal")
+            price_bracing = st.number_input("Bog'lamalar", min_value=0.0, max_value=5000.0, value=950.0, step=50.0, key="price_metal_bracing")
+        
+        st.markdown("#### Birikma detallari")
+        col_c1, col_c2 = st.columns(2)
+        with col_c1:
+            connection_type = st.selectbox(
+                "Birikma turi", 
+                ["bolted", "welded", "mixed"], 
+                index=2, 
+                key="connection_type"
+            )
+        with col_c2:
+            price_connection = st.number_input(
+                "Birikmalar narxi (1 tonna)", 
+                min_value=0.0, 
+                max_value=5000.0, 
+                value=950.0, 
+                step=50.0, 
+                key="price_metal_connection"
+            )
+        
+        st.markdown("#### Qurilish materiallari (1 m²/$)")
+        col_p1, col_p2 = st.columns(2)
+        with col_p1:
+            wall_price = st.number_input("Devor paneli", min_value=0.0, max_value=500.0, value=35.0, step=5.0, key="price_wall")
+            roof_price = st.number_input("Tom qoplamasi", min_value=0.0, max_value=500.0, value=45.0, step=5.0, key="price_roof")
+        with col_p2:
+            floor_price = st.number_input("Pol qoplamasi", min_value=0.0, max_value=500.0, value=45.0, step=5.0, key="price_floor")
+            window_price = st.number_input("Deraza (1 m²)", min_value=0.0, max_value=200.0, value=45.0, step=5.0, key="price_window")
+            door_price = st.number_input("Darvoza (1 m²)", min_value=0.0, max_value=200.0, value=28.0, step=5.0, key="price_door")
+        
+        st.markdown("#### Beton va materiallar")
+        col_b1, col_b2 = st.columns(2)
+        with col_b1:
+            concrete_price = st.number_input("Beton (1 m³)", min_value=0.0, max_value=500.0, value=85.0, step=5.0, key="price_concrete")
+            cement_price = st.number_input("Sement (1 kg)", min_value=0.0, max_value=1.0, value=0.09, step=0.01, key="price_cement")
+            sand_price = st.number_input("Qum (1 m³)", min_value=0.0, max_value=200.0, value=35.0, step=5.0, key="price_sand")
+        with col_b2:
+            rebar_price = st.number_input("Armatura (1 kg)", min_value=0.0, max_value=2.0, value=0.85, step=0.05, key="price_rebar")
+            gravel_price = st.number_input("Shag'al (1 m³)", min_value=0.0, max_value=200.0, value=40.0, step=5.0, key="price_gravel")
+            shipyak_price = st.number_input("Shipyak (1 m²)", min_value=0.0, max_value=100.0, value=30.0, step=5.0, key="price_shipyak")
+        
+        st.markdown("#### Ishchi kuchi")
+        labor_percent = st.slider("Ishchi kuchi foizi (%)", 0, 100, 32, 1, key="labor_percent")
+    
+    with st.sidebar.expander("Muhandislik va iqlim", expanded=False):
+        heating = st.selectbox("Isitish", ["Yoq", "Gazli", "Elektr", "Infraqizil"], key="cons_heating")
+        ventilation = st.selectbox("Shamollatish", ["Tabiiy", "Majburiy", "Rekuperatsiya"], key="cons_vent")
+        electricity = st.selectbox("Elektr", ["Standart", "Kuchaytirilgan", "Sanoat"], key="cons_elec")
+        plumbing = st.selectbox("Suv taminoti", ["Yoq", "Bor", "Sanoat"], key="cons_plumb")
+        seismic_zone = st.selectbox("Seysmik zona", [7, 8, 9], index=1, key="cons_seismic")
+        wind_region = st.selectbox("Shamol hududi", ["A", "B", "C"], index=1, key="cons_wind")
+        st.divider()
+        st.markdown("#### Tuproq va qor (chidamlilik hisobi uchun)")
+        soil_type = st.selectbox("Tuproq turi", list(SOIL_TYPES.keys()), index=3, key="cons_soil")
+        st.caption(SOIL_TYPES[soil_type]["tavsif"])
+        snow_region = st.selectbox("Qor mintaqasi", list(SNOW_REGIONS.keys()), index=0, key="cons_snow_region")
+    
+    # ===== RETURN - BARCHA PARAMETRLAR =====
+    return {
+        "construction_type": construction_type,
+        "construction_name": name,
+        "construction_code": code,
+        "L": L, "W": W, "H": H, "roof_pitch": roof_pitch, "floors": 1,
+        "column_spacing": column_spacing, 
+        "wall_type": wall_type, "wall_thickness": wall_thickness,
+        "floor_type": floor_type,
+        "floor_thickness_cm": floor_thickness_cm,  # ✅ YANGI - foydalanuvchi kiritgan
+        "roof_type": roof_type,
+        "window_count_front": w_front, "window_count_back": w_back,
+        "window_count_left": w_left, "window_count_right": w_right,
+        "window_width": window_width, "window_height": window_height,
+        "door_front_count": door_front_count, 
+        "door_front_width": door_front_width, 
+        "door_front_height": door_front_height,
+        "door_back_count": door_back_count, 
+        "door_back_width": door_back_width, 
+        "door_back_height": door_back_height,
+        "door_left_count": door_left_count, 
+        "door_left_width": door_left_width, 
+        "door_left_height": door_left_height,
+        "door_right_count": door_right_count, 
+        "door_right_width": door_right_width, 
+        "door_right_height": door_right_height,
+        "floor_panel_mode": floor_panel_mode,
+        # Metall narxlari
+        "price_metal_column": price_column,
+        "price_metal_beam": price_beam,
+        "price_metal_truss": price_truss,
+        "price_metal_longitudinal": price_longitudinal,
+        "price_metal_purlins": price_purlins,
+        "price_metal_bracing": price_bracing,
+        "price_metal_connection": price_connection,
+        "connection_type": connection_type,
+        # Qurilish materiallari
+        "wall_price": wall_price,
+        "roof_price": roof_price,
+        "floor_price": floor_price,
+        "window_price": window_price,
+        "door_price": door_price,
+        "price_concrete": concrete_price,
+        "price_cement": cement_price,
+        "price_sand": sand_price,
+        "price_gravel": gravel_price,
+        "price_rebar": rebar_price,
+        "price_shipyak": shipyak_price,
+        "labor_percent": labor_percent,
+        # Muhandislik
+        "heating": heating, "ventilation": ventilation,
+        "electricity": electricity, "plumbing": plumbing,
+        "seismic_zone": seismic_zone, "wind_region": wind_region,
+        "soil_type": soil_type, "snow_region": snow_region,
+        "purlin_profile": purlin_profile,
+        "wall_purlin_profile": wall_purlin_profile,
+        "bracing_profile": bracing_profile,
+        "construction_system": construction_system,
+    }
     # construction_sidebar() funksiyasida (taxminan 2200-qator)
     with st.sidebar.expander("Konstruksiya turi", expanded=True):
         construction_system = st.radio(
@@ -4122,30 +4327,35 @@ def construction_main(params):
 
     # 🔽 MUHIM: column_spacing ni uzatamiz!
     html_3d = create_construction_3d(
-        params["L"], params["W"], params["H"], params["roof_pitch"],
-        window_count=total_windows,
-        door_front_count=door_front_count,
-        door_front_width=door_front_width,
-        door_front_height=door_front_height,
-        door_back_count=door_back_count,
-        door_back_width=door_back_width,
-        door_back_height=door_back_height,
-        door_left_count=door_left_count,
-        door_left_width=door_left_width,
-        door_left_height=door_left_height,
-        door_right_count=door_right_count,
-        door_right_width=door_right_width,
-        door_right_height=door_right_height,
-        window_width=params["window_width"],
-        window_height=params["window_height"],
-        window_spacing=0.0,
-        seismic_zone=params.get("seismic_zone", 8),
-        wind_kPa=resilience["wind"]["w_kPa"],
-        snow_kg_m2=resilience["snow"]["S_kg_m2"],
-        column_utilization=resilience["column_utilization"],
-        foundation_utilization=resilience["foundation_utilization"],
-        column_spacing=column_spacing
-    )
+            params["L"], params["W"], params["H"], params["roof_pitch"],
+            
+            # ===== MUHIM: window_front_count va window_back_count =====
+            window_count=total_windows,
+            window_front_count=params.get("window_count_front", 0),   # OLD DEVOR
+            window_back_count=params.get("window_count_back", 0),     # ORQA DEVOR
+            
+            door_front_count=door_front_count,
+            door_front_width=door_front_width,
+            door_front_height=door_front_height,
+            door_back_count=door_back_count,
+            door_back_width=door_back_width,
+            door_back_height=door_back_height,
+            door_left_count=door_left_count,
+            door_left_width=door_left_width,
+            door_left_height=door_left_height,
+            door_right_count=door_right_count,
+            door_right_width=door_right_width,
+            door_right_height=door_right_height,
+            window_width=params["window_width"],
+            window_height=params["window_height"],
+            window_spacing=0.0,
+            seismic_zone=params.get("seismic_zone", 8),
+            wind_kPa=resilience["wind"]["w_kPa"],
+            snow_kg_m2=resilience["snow"]["S_kg_m2"],
+            column_utilization=resilience["column_utilization"],
+            foundation_utilization=resilience["foundation_utilization"],
+            column_spacing=column_spacing
+        )
     
     st.caption("Yuqoridagi panelda Qor / Yomg'ir / Shamol effektlarini yoqib ko'ring, yoki Zilzila testi bilan tanlangan seysmik zona va chidamlilik hisobiga mos tebranishni sinab ko'ring.")
     
