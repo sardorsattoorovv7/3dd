@@ -330,76 +330,83 @@ FOUNDATION_FREEZING_DEPTH_M = 0.8   # Toshkent mintaqasi uchun taxminiy normativ
 
 # ---------------------------------------------------------------------------
 # Yordamchi: ustunlar joylashuvini hisoblash (3D va material hisob-kitobida
-# bir xil natija beradigan yagona manba)
-# ---------------------------------------------------------------------------
-def compute_column_layout(L, W, column_spacing=8.5):
+def compute_column_layout(L, W, column_spacing=None):
     """
-    Ustunlar joylashuvini hisoblash - foydalanuvchi tomonidan kiritilgan oralig' bilan
+    Ustunlar joylashuvini hisoblash - darslik VIII.3-band asosida
     """
-    col_spacing_x = column_spacing  # 🔽 Endi parametr sifatida qabul qiladi
-    n_cols_x = max(2, int(L / col_spacing_x) + 1)
-    actual_spacing_x = L / (n_cols_x - 1) if n_cols_x > 1 else L
-
-    col_spacing_z = column_spacing  # 🔽 Kenglik bo'ylab ham
-    n_cols_z = max(2, int(W / col_spacing_z) + 1)
-    actual_spacing_z = W / (n_cols_z - 1) if n_cols_z > 1 else W
-
+    # Darslik VIII.3-band: optimal ustun oralig'i
+    if column_spacing is None:
+        # Bino o'lchamiga qarab optimal oraliqni aniqlash
+        if max(L, W) <= 20:
+            column_spacing = 6.0
+        elif max(L, W) <= 40:
+            column_spacing = 8.0
+        elif max(L, W) <= 60:
+            column_spacing = 10.0
+        else:
+            column_spacing = 12.0
+    
+    if L <= 0 or W <= 0:
+        return {"n_cols_x": 2, "n_cols_z": 2, "spacing_x": L, "spacing_z": W}
+    
+    n_cols_x = max(2, int(L / column_spacing) + 1)
+    n_cols_z = max(2, int(W / column_spacing) + 1)
+    spacing_x = L / (n_cols_x - 1) if n_cols_x > 1 else L
+    spacing_z = W / (n_cols_z - 1) if n_cols_z > 1 else W
+    
     return {
         "n_cols_x": n_cols_x,
         "n_cols_z": n_cols_z,
-        "spacing_x": actual_spacing_x,
-        "spacing_z": actual_spacing_z,
-        "column_spacing": column_spacing,  # 🔽 Qo'shimcha
+        "spacing_x": spacing_x,
+        "spacing_z": spacing_z,
+        "column_spacing": column_spacing
     }
-# compute_metal_quantities funksiyasidan OLDIN qo'shing (taxminan 200-qator atrofida)
-
 def get_construction_system_factors(system_type, L, W, H):
-    """Konstruksiya turiga qarab koeffitsiyentlar"""
+    """Darslik VIII-bob asosida konstruksiya turi koeffitsiyentlari"""
     
     if system_type == "LSTK (Yengil Po'lat)":
-        if system_type == "LSTK (Yengil Po'lat)":
-            return {
-                "weight_multiplier": 1.0,
-                "column_kg_m": 11.62,      # ← GOST 8639-82, Profil 100x100x4 mm
-                "beam_kg_m": 8.52,         # ← GOST 8645-68, Profil 100x50x4 mm
-                "truss_kg_m": 5.25,        # ← GOST 8639-82, Profil 60x60x3 mm
-                "bracing_kg_m": 12.30,     # ← GOST 8240-97, Shveller 14P
-                "connection_type": "screwed",
-                "max_span": 30,
-                "service_life": 35,
-                "corrosion_protection": True,
-            }
+        return {
+            "weight_multiplier": 1.0,
+            "column_kg_m": 11.62,      # GOST 8639-82, Profil 100x100x4 mm
+            "beam_kg_m": 8.52,         # GOST 8645-68, Profil 100x50x4 mm
+            "truss_kg_m": 5.25,        # GOST 8639-82, Profil 60x60x3 mm
+            "bracing_kg_m": 12.30,     # GOST 8240-97, Shveller 14P
+            "connection_type": "screwed",
+            "max_span": 30,
+            "service_life": 35,
+            "corrosion_protection": True,
+        }
     elif system_type == "OG'IR METALL (Heavy Steel)":
         return {
-            "weight_multiplier": 1.3,   # LMK dan 1.3 baravar og'ir
-            "column_kg_m": 50.0,        # H-tavr 300x300 (o'rtacha og'ir)
-            "beam_kg_m": 40.0,          # H-tavr 250x250
-            "truss_kg_m": 28.0,         # Qalin truss
-            "bracing_kg_m": 20.0,       # Kanal 24P
+            "weight_multiplier": 1.3,
+            "column_kg_m": 50.0,       # Darslik VIII.5-rasm: og'ir ustun
+            "beam_kg_m": 40.0,         # Darslik VIII.6-rasm: og'ir to'sin
+            "truss_kg_m": 28.0,        # Darslik II.2-band: og'ir ferma
+            "bracing_kg_m": 20.0,      # Darslik VIII.7-band: og'ir bog'lovchi
             "connection_type": "welded",
             "max_span": 90,
             "service_life": 50,
             "corrosion_protection": False,
-            "weight_kg_m2": 40,         # 1 m² ga metall (o'rtacha og'ir)
-            "price_factor": 1.25,       # Narx 1.25 baravar
         }
-    else:  # LMK
+    else:  # LMK (Yengil Metall) - standart
         return {
             "weight_multiplier": 1.0,
-            "column_kg_m": 32.5,
-            "beam_kg_m": 24.5,
-            "truss_kg_m": 18.5,
-            "bracing_kg_m": 14.0,
+            "column_kg_m": 32.5,       # Darslik VIII.5-rasm: standart ustun
+            "beam_kg_m": 24.5,         # Darslik VIII.6-rasm: standart to'sin
+            "truss_kg_m": 18.5,        # Darslik II.2-band: standart ferma
+            "bracing_kg_m": 14.0,      # Darslik VIII.7-band: standart bog'lovchi
             "connection_type": "welded",
             "max_span": 80,
             "service_life": 50,
             "corrosion_protection": False,
         }
-
-def compute_metal_quantities(L, W, H, roof_pitch, column_spacing=8.5, system_type="LMK (Yengil Metall)"):
+def compute_metal_quantities(L, W, H, roof_pitch, column_spacing=None, system_type="LMK (Yengil Metall)"):
     """
-    Metall miqdorlarini hisoblash - LMK/LSTK uchun
+    Darslik II.2-band va VIII-bob asosida metall miqdorlarini hisoblash
     """
+    if column_spacing is None:
+        column_spacing = 8.5
+    
     factors = get_construction_system_factors(system_type, L, W, H)
     
     pitch_rad = math.radians(roof_pitch)
@@ -408,11 +415,10 @@ def compute_metal_quantities(L, W, H, roof_pitch, column_spacing=8.5, system_typ
     n_cols_z = layout["n_cols_z"]
     prolyot = W
     
-    # ===== 1) USTUNLAR =====
+    # ===== 1) USTUNLAR (Darslik VIII.5-band) =====
     total_columns = (n_cols_x * 2) + (max(0, n_cols_z - 2) * 2)
     column_meters = total_columns * H
     
-    # Balandlik koeffitsiyenti
     if H <= 4:
         height_factor = 1.0
     elif H <= 6:
@@ -429,12 +435,12 @@ def compute_metal_quantities(L, W, H, roof_pitch, column_spacing=8.5, system_typ
     column_kg = column_meters * column_kg_m
     column_qoshimcha = total_columns * 45 * height_factor * factors["weight_multiplier"]
     
-    # ===== 2) TOSINLAR =====
+    # ===== 2) TOSINLAR (Darslik VIII.6-band) =====
     beam_meters = 2 * (L + W) * 1.5 * factors["weight_multiplier"]
     beam_kg_m = factors["beam_kg_m"]
     beam_kg = beam_meters * beam_kg_m
     
-    # ===== 3) FERMALAR =====
+    # ===== 3) FERMALAR (Darslik II.2-band) =====
     truss_count = n_cols_x
     if roof_pitch > 0:
         slope = (W / 2) / math.cos(pitch_rad)
@@ -458,28 +464,26 @@ def compute_metal_quantities(L, W, H, roof_pitch, column_spacing=8.5, system_typ
     truss_kg = truss_meters * truss_kg_m
     truss_qoshimcha = truss_count * 60 * factors["weight_multiplier"]
     
-    # ===== 4) PROGONLAR =====
-    # ✅ Tuzatish: purlin_result ni hisoblaymiz va materials ga qo'shamiz
+    # ===== 4) PROGONLAR (Darslik II.2-band) =====
     purlin_result = compute_purlins(L, W, H, roof_pitch, 
                                    system_type=system_type,
                                    factors=factors)
     longitudinal_meters = purlin_result["total_m"]
     longitudinal_kg = purlin_result["total_kg"]
     
-    # ===== 5) BOG'LAMALAR =====
-    vert_bog_m = n_cols_x * H * 0.6 * factors["weight_multiplier"]
-    goriz_bog_m = (L + W) * 0.6 * factors["weight_multiplier"]
-    seysmik_m = (L + W) * 0.4 * factors["weight_multiplier"]
-    
-    jami_boglamalar_m = vert_bog_m + goriz_bog_m + seysmik_m
-    bog_kg_m = factors["bracing_kg_m"]
-    jami_boglamalar_kg = jami_boglamalar_m * bog_kg_m
+    # ===== 5) BOG'LAMALAR (Darslik VIII.7-band) =====
+    # ✅ TO'G'RILANGAN: compute_bracing funksiyasidan foydalanish
+    seismic_zone = 8  # Default
+    bracing_result = compute_bracing(L, W, H, seismic_zone)
+    jami_boglamalar_kg = bracing_result["total_kg"]
+    jami_boglamalar_m = bracing_result["total_m"]
     
     # ===== 6) ASOSIY METALL =====
     asosiy_metal_kg = (column_kg + column_qoshimcha + beam_kg + truss_kg + 
                         truss_qoshimcha + longitudinal_kg + jami_boglamalar_kg)
     
-    # ===== 7) BIRIKMA DETALLARI =====
+    # ===== 7) BIRIKMA DETALLARI (Darslik I.1-band) =====
+    # ✅ TO'G'RILANGAN: faqat asosiy metall asosida
     if "LSTK" in system_type:
         birikma_k = 0.02
     else:
@@ -505,11 +509,11 @@ def compute_metal_quantities(L, W, H, roof_pitch, column_spacing=8.5, system_typ
         "longitudinal_meters": round(longitudinal_meters, 1),
         "longitudinal_kg": round(longitudinal_kg, 1),
         "longitudinal_tonna": round(longitudinal_kg / 1000, 3),
-        # ✅ Qo'shimcha: purlin ma'lumotlarini ham qaytaramiz
         "purlins_total_kg": round(longitudinal_kg, 1),
         "purlins_total_tonna": round(longitudinal_kg / 1000, 3),
         "boglamalar_kg": round(jami_boglamalar_kg, 1),
         "boglamalar_tonna": round(jami_boglamalar_kg / 1000, 3),
+        "boglamalar_m": round(jami_boglamalar_m, 1),
         "birikma_kg": round(birikma_kg, 1),
         "birikma_tonna": round(birikma_kg / 1000, 3),
         "total_metal_kg": round(total_metal_kg, 1),
@@ -522,7 +526,6 @@ def compute_metal_quantities(L, W, H, roof_pitch, column_spacing=8.5, system_typ
         "connection_type": factors["connection_type"],
         "corrosion_protection": factors["corrosion_protection"],
     }
-# ============================================================
 
 def select_optimal_profile(load_kg, span_m, height_m, profile_type="column"):
     """
@@ -869,6 +872,9 @@ def compute_resilience_report(params, materials):
     }
 
 
+import math
+import json
+
 def create_construction_3d(L, W, H, roof_pitch,
                            window_count=4, 
                            # Old devor darvozalari
@@ -883,7 +889,7 @@ def create_construction_3d(L, W, H, roof_pitch,
                            window_spacing=0.0,
                            # Ob-havo / zilzila simulyatsiyasi uchun (chidamlilik hisobidan keladi)
                            seismic_zone=8, wind_kPa=0.4, snow_kg_m2=50.0,
-                           column_utilization=50.0, foundation_utilization=50.0,column_spacing=8.5):
+                           column_utilization=50.0, foundation_utilization=50.0, column_spacing=8.5):
 
     pitch_rad = math.radians(roof_pitch)
     ridge_height = H + (W / 2) * math.tan(pitch_rad) if roof_pitch > 0 and W > 0 else H
@@ -895,96 +901,81 @@ def create_construction_3d(L, W, H, roof_pitch,
     actual_spacing_x = layout["spacing_x"]
     actual_spacing_z = layout["spacing_z"]
 
-    # Derazalar joylashuvi (X o'qi bo'ylab)
+    # Ustunlar orasidagi intervallarni hisoblash
+    column_intervals = []
+    for i in range(n_cols_x - 1):
+        x1 = i * actual_spacing_x
+        x2 = (i + 1) * actual_spacing_x
+        center = (x1 + x2) / 2
+        interval_width = x2 - x1
+        column_intervals.append({
+            "start": x1,
+            "end": x2,
+            "center": center,
+            "width": interval_width
+        })
+
+    # Derazalar joylashuvi - faqat ustunlar orasiga
     win_jsons = []
-    if window_count > 0 and L > 0:
-        if window_spacing <= 0.01:
-            total_width = window_count * window_width
-            if total_width <= L:
-                start = (L - total_width) / 2
-                for i in range(window_count):
-                    wx = start + i * window_width + window_width / 2
-                    wy = H * 0.55
-                    win_jsons.append((wx, wy))
-            else:
-                for i in range(window_count):
-                    wx = (i + 0.5) * (L / window_count)
-                    wy = H * 0.55
-                    win_jsons.append((wx, wy))
-        else:
-            usable = L - 2.0
-            gap = usable / (window_count + 1) if window_count > 0 else 0
-            for i in range(window_count):
-                wx = 1.0 + gap * (i + 1)
+    if window_count > 0 and L > 0 and len(column_intervals) > 0:
+        # Derazalarni ustunlar orasiga taqsimlash
+        available_intervals = column_intervals.copy()
+        # Darvozalar joylashgan intervallarni olib tashlash
+        door_positions = []
+        
+        # Old darvozalar (Z = W)
+        for dx in calculate_door_positions(L, door_front_count, door_front_width):
+            door_positions.append({"x": dx, "wall": "front"})
+        
+        # Orqa darvozalar (Z = 0)
+        for dx in calculate_door_positions(L, door_back_count, door_back_width):
+            door_positions.append({"x": dx, "wall": "back"})
+        
+        # Darvozalar joylashgan intervallarni belgilash
+        blocked_intervals = set()
+        for door in door_positions:
+            door_x = door["x"]
+            half_door = door_front_width / 2 if door["wall"] == "front" else door_back_width / 2
+            for idx, interval in enumerate(available_intervals):
+                if (interval["start"] < door_x + half_door and 
+                    interval["end"] > door_x - half_door):
+                    blocked_intervals.add(idx)
+        
+        # Faqat bo'sh intervallarni olish
+        free_intervals = [i for i in range(len(available_intervals)) if i not in blocked_intervals]
+        
+        # Derazalarni joylashtirish
+        if len(free_intervals) > 0:
+            for i in range(min(window_count, len(free_intervals))):
+                interval_idx = free_intervals[i % len(free_intervals)]
+                interval = available_intervals[interval_idx]
+                wx = interval["center"]
                 wy = H * 0.55
                 win_jsons.append((wx, wy))
+        else:
+            # Agar bo'sh interval bo'lmasa, derazalarni chetga joylashtirish
+            for i in range(window_count):
+                if len(available_intervals) > 0:
+                    idx = i % len(available_intervals)
+                    wx = available_intervals[idx]["center"]
+                    wy = H * 0.55
+                    win_jsons.append((wx, wy))
 
     win_pos_js = "[" + ",".join(f"[{p[0]:.3f},{p[1]:.3f}]" for p in win_jsons) + "]"
 
     # ========== DARVOZALAR JOYLASHUVI ==========
     
-    # Old darvozalar (Z = W)
-    door_front_positions = []
-    if door_front_count > 0 and L > 0:
-        total_w = door_front_count * door_front_width
-        if total_w < L:
-            gap = (L - total_w) / (door_front_count + 1)
-            for i in range(door_front_count):
-                dx = gap * (i + 1) + door_front_width * (i + 0.5)
-                door_front_positions.append(dx)
-        else:
-            seg = L / door_front_count
-            for i in range(door_front_count):
-                door_front_positions.append(seg * (i + 0.5))
+    door_front_positions = calculate_door_positions(L, door_front_count, door_front_width)
+    door_back_positions = calculate_door_positions(L, door_back_count, door_back_width)
+    door_left_positions = calculate_door_positions(W, door_left_count, door_left_width)
+    door_right_positions = calculate_door_positions(W, door_right_count, door_right_width)
+    
     door_front_pos_js = "[" + ",".join(f"{p:.3f}" for p in door_front_positions) + "]"
-
-    # Orqa darvozalar (Z = 0)
-    door_back_positions = []
-    if door_back_count > 0 and L > 0:
-        total_w = door_back_count * door_back_width
-        if total_w < L:
-            gap = (L - total_w) / (door_back_count + 1)
-            for i in range(door_back_count):
-                dx = gap * (i + 1) + door_back_width * (i + 0.5)
-                door_back_positions.append(dx)
-        else:
-            seg = L / door_back_count
-            for i in range(door_back_count):
-                door_back_positions.append(seg * (i + 0.5))
     door_back_pos_js = "[" + ",".join(f"{p:.3f}" for p in door_back_positions) + "]"
-
-    # Chap darvozalar (X = 0) - Z o'qi bo'ylab joylashadi
-    door_left_positions = []
-    if door_left_count > 0 and W > 0:
-        total_w = door_left_count * door_left_width
-        if total_w < W:
-            gap = (W - total_w) / (door_left_count + 1)
-            for i in range(door_left_count):
-                dz = gap * (i + 1) + door_left_width * (i + 0.5)
-                door_left_positions.append(dz)
-        else:
-            seg = W / door_left_count
-            for i in range(door_left_count):
-                door_left_positions.append(seg * (i + 0.5))
     door_left_pos_js = "[" + ",".join(f"{p:.3f}" for p in door_left_positions) + "]"
-
-    # O'ng darvozalar (X = L) - Z o'qi bo'ylab joylashadi
-    door_right_positions = []
-    if door_right_count > 0 and W > 0:
-        total_w = door_right_count * door_right_width
-        if total_w < W:
-            gap = (W - total_w) / (door_right_count + 1)
-            for i in range(door_right_count):
-                dz = gap * (i + 1) + door_right_width * (i + 0.5)
-                door_right_positions.append(dz)
-        else:
-            seg = W / door_right_count
-            for i in range(door_right_count):
-                door_right_positions.append(seg * (i + 0.5))
     door_right_pos_js = "[" + ",".join(f"{p:.3f}" for p in door_right_positions) + "]"
 
-    # Ob-havo simulyatsiyasi uchun vizual masshtablash (haqiqiy fizik birlik
-    # emas - faqat zarracha tezligi/intensivligini ko'rinishli qilish uchun)
+    # Ob-havo simulyatsiyasi uchun vizual masshtablash
     wind_speed_js = round(wind_kPa * 8, 2)
     snow_intensity_js = round(min(1.0, snow_kg_m2 / 150), 2)
 
@@ -1044,6 +1035,22 @@ def create_construction_3d(L, W, H, roof_pitch,
     position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
     background:#eef1f3; z-index:300; color:#607D8B; font-size:13px; letter-spacing:1px;
   }}
+
+  /* Drag & Drop uchun markerlar */
+  .drag-marker {{
+    position:absolute; width:12px; height:12px; border-radius:50%;
+    background:#ff5722; border:2px solid #fff; cursor:grab;
+    z-index:100; box-shadow:0 2px 8px rgba(0,0,0,0.3);
+    pointer-events:all;
+  }}
+  .drag-marker:hover {{ transform:scale(1.2); }}
+  .drag-marker.door {{ background:#2196F3; }}
+  .drag-marker.window {{ background:#4CAF50; }}
+  .drag-label {{
+    position:absolute; font-size:8px; color:#fff; background:rgba(0,0,0,0.7);
+    padding:1px 4px; border-radius:3px; pointer-events:none;
+    white-space:nowrap; transform:translateY(-20px);
+  }}
 </style>
 </head>
 <body>
@@ -1066,6 +1073,8 @@ def create_construction_3d(L, W, H, roof_pitch,
     <label class="chk-label"><input type="checkbox" id="chkWin"     checked> Derazalar</label>
     <label class="chk-label"><input type="checkbox" id="chkDoor"    checked> Darvozalar</label>
   </div>
+  <div class="sep"></div>
+  <button class="vbtn" id="btnDragMode" style="background:#ff5722;color:#fff;border-color:#ff5722;">Siljitish</button>
 </div>
 
 <div id="weather-controls" style="position:absolute; bottom:16px; left:16px; z-index:200; background:rgba(255,255,255,0.95); padding:14px 16px; border-radius:8px; border:1px solid #e0e0e0; box-shadow:0 2px 12px rgba(0,0,0,0.06); font-size:11px; color:#424242; min-width:250px;">
@@ -1079,19 +1088,8 @@ def create_construction_3d(L, W, H, roof_pitch,
 
 <div id="quakeResult" style="display:none; position:absolute; top:78px; left:50%; transform:translateX(-50%); z-index:250; padding:14px 28px; border-radius:10px; color:#fff; font-weight:700; font-size:14px; box-shadow:0 4px 20px rgba(0,0,0,0.3); text-align:center; max-width:520px;"></div>
 
-<div id="info-panel">
-  <h4>Parametrlar</h4>
-  <div class="row"><span>Uzunlik</span><span class="val">{L:.1f} m</span></div>
-  <div class="row"><span>Kenglik</span><span class="val">{W:.1f} m</span></div>
-  <div class="row"><span>Balandlik</span><span class="val">{H:.1f} m</span></div>
-  <div class="row"><span>Tom qiyaligi</span><span class="val">{roof_pitch:.1f}&deg;</span></div>
-  <div class="row"><span>Old darvoza</span><span class="val">{door_front_count} x {door_front_width:.1f}x{door_front_height:.1f} m</span></div>
-  <div class="row"><span>Orqa darvoza</span><span class="val">{door_back_count} x {door_back_width:.1f}x{door_back_height:.1f} m</span></div>
-  <div class="row"><span>Chap darvoza</span><span class="val">{door_left_count} x {door_left_width:.1f}x{door_left_height:.1f} m</span></div>
-  <div class="row"><span>O'ng darvoza</span><span class="val">{door_right_count} x {door_right_width:.1f}x{door_right_height:.1f} m</span></div>
-</div>
 
-<div id="hint">Aylantirish: LMB | Surish: RMB | Zoom: Gildirak</div>
+<div id="hint">Aylantirish: LMB | Surish: RMB | Zoom: Gildirak | Siljitish: "Siljitish" tugmasi</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
@@ -1112,31 +1110,31 @@ const HALF_W = W / 2;
 const DOOR_FRONT_COUNT = {door_front_count};
 const DOOR_FRONT_W = {door_front_width};
 const DOOR_FRONT_H = {door_front_height};
-const DOOR_FRONT_POSITIONS = {door_front_pos_js};
+let DOOR_FRONT_POSITIONS = {door_front_pos_js};
 
 // Orqa darvozalar
 const DOOR_BACK_COUNT = {door_back_count};
 const DOOR_BACK_W = {door_back_width};
 const DOOR_BACK_H = {door_back_height};
-const DOOR_BACK_POSITIONS = {door_back_pos_js};
+let DOOR_BACK_POSITIONS = {door_back_pos_js};
 
 // Chap darvozalar (X = 0)
 const DOOR_LEFT_COUNT = {door_left_count};
 const DOOR_LEFT_W = {door_left_width};
 const DOOR_LEFT_H = {door_left_height};
-const DOOR_LEFT_POSITIONS = {door_left_pos_js};
+let DOOR_LEFT_POSITIONS = {door_left_pos_js};
 
 // O'ng darvozalar (X = L)
 const DOOR_RIGHT_COUNT = {door_right_count};
 const DOOR_RIGHT_W = {door_right_width};
 const DOOR_RIGHT_H = {door_right_height};
-const DOOR_RIGHT_POSITIONS = {door_right_pos_js};
+let DOOR_RIGHT_POSITIONS = {door_right_pos_js};
 
 const WIN_W = {window_width};
 const WIN_H = {window_height};
 const WIN_COUNT = {window_count};
 const WIN_SPACING = {window_spacing};
-const WIN_POSITIONS = {win_pos_js};
+let WIN_POSITIONS = {win_pos_js};
 
 const COL_STEP_X = {actual_spacing_x:.4f};
 const COL_STEP_Z = {actual_spacing_z:.4f};
@@ -1151,6 +1149,16 @@ const WIND_SPEED_BASE = {wind_speed_js};
 const SNOW_INTENSITY_BASE = {snow_intensity_js};
 const COLUMN_UTIL_VAL = {column_utilization};
 const FOUNDATION_UTIL_VAL = {foundation_utilization};
+
+// Ustunlar orasidagi intervallar
+const columnIntervals = [];
+for (let i = 0; i < N_COLS_X - 1; i++) {{
+  const x1 = i * COL_STEP_X;
+  const x2 = (i + 1) * COL_STEP_X;
+  columnIntervals.push({{
+    start: x1, end: x2, center: (x1 + x2) / 2, width: x2 - x1
+  }});
+}}
 
 // ============================================================
 // Scene setup
@@ -1225,7 +1233,6 @@ scene.add(interiorLight3);
 
 const interiorAmbient = new THREE.AmbientLight(0xffffff, 0.55);
 scene.add(interiorAmbient);
-
 // ============================================================
 // MATERIALS
 // ============================================================
@@ -1237,12 +1244,24 @@ const matPanelDouble = new THREE.MeshStandardMaterial({{ color:0xe6e9eb, roughne
 const matPanelTrim= new THREE.MeshStandardMaterial({{ color:0x37474F, roughness:0.4,  metalness:0.6  }});
 const matRoof     = new THREE.MeshStandardMaterial({{ color:0x7c8893, metalness:0.5,  roughness:0.4, side:THREE.DoubleSide }});
 const matRidge    = new THREE.MeshStandardMaterial({{ color:0x37474F, metalness:0.85, roughness:0.25 }});
+
+// ✅ QO'SHISH KERAK: Deraza oynasi
 const matGlass    = new THREE.MeshPhysicalMaterial({{
-  color:0xffffff, transparent:true, opacity:0.08, roughness:0.0, metalness:0.0,
-  transmission:1.0, ior:1.4, thickness:0.01, reflectivity:0.05, clearcoat:0.0,
-  side:THREE.DoubleSide, depthWrite:false
+  color: 0x87CEEB,
+  transparent: true,
+  opacity: 0.5,
+  roughness: 0.1,
+  metalness: 0.0,
+  side: THREE.DoubleSide
 }});
-const matFrame    = new THREE.MeshStandardMaterial({{ color:0x2C3E50, roughness:0.4, metalness:0.7 }});
+
+// ✅ QO'SHISH KERAK: Deraza ramkasi
+const matFrame    = new THREE.MeshStandardMaterial({{ 
+  color: 0x78909C,
+  roughness: 0.2,
+  metalness: 0.5
+}});
+
 const matConcrete = new THREE.MeshStandardMaterial({{ color:0xc7c9cb, roughness:0.92, metalness:0.0 }});
 const matDoorPanel= new THREE.MeshStandardMaterial({{ color:0x6b7785, metalness:0.6, roughness:0.35 }});
 const matDoorFrame= new THREE.MeshStandardMaterial({{ color:0x808487, metalness:0.5, roughness:0.45 }});
@@ -1250,7 +1269,6 @@ const matGround   = new THREE.MeshStandardMaterial({{ color:0xc9cfb8, roughness:
 const matCorrugated = new THREE.MeshStandardMaterial({{ color:0xdde1e3, roughness:0.5, metalness:0.15, side:THREE.DoubleSide }});
 const matGusset   = new THREE.MeshStandardMaterial({{ color:0x4a525c, metalness:0.7, roughness:0.4 }});
 const matBolt     = new THREE.MeshStandardMaterial({{ color:0x2b2f33, metalness:0.6, roughness:0.5 }});
-
 // ============================================================
 // Corrugated panel geometry
 // ============================================================
@@ -1305,8 +1323,7 @@ interiorFloor.receiveShadow = true;
 scene.add(interiorFloor);
 
 // ============================================================
-// Bino guruhi - zilzila simulyatsiyasida FAQAT shu guruh harakatlanadi,
-// yer/fundament (ground, platform) o'z joyida qoladi
+// Bino guruhi - zilzila simulyatsiyasida FAQAT shu guruh harakatlanadi
 // ============================================================
 const buildingGroup = new THREE.Group();
 scene.add(buildingGroup);
@@ -1568,12 +1585,17 @@ if (IS_PITCHED && W > 0) {{
 buildingGroup.add(roofGroup);
 
 // ============================================================
-// Walls with openings
+// Walls with openings - Dinamik qayta qurish uchun
 // ============================================================
 const wallGroup = new THREE.Group();
 const windowGroup = new THREE.Group();
 const doorGroup = new THREE.Group();
 const T = 0.12;
+
+// Ob'ektlar ma'lumotlarini saqlash uchun
+let wallSegments = [];
+let windowMeshes = [];
+let doorMeshes = [];
 
 function addWallSegment(group, length, height, axis, normalSign, fixedCoord, segCenter, baseY) {{
   if (length <= 0.02 || height <= 0.02) return;
@@ -1604,9 +1626,10 @@ function addWallSegment(group, length, height, axis, normalSign, fixedCoord, seg
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   group.add(mesh);
+  return mesh;
 }}
 
-function addWindow(axis, fixedCoord, normalSign, centerAlong, centerY) {{
+function addWindowMesh(axis, fixedCoord, normalSign, centerAlong, centerY) {{
   let g, f, mvv, mhh;
   if (axis === 'x') {{
     g  = new THREE.BoxGeometry(WIN_W, WIN_H, 0.03);
@@ -1638,6 +1661,7 @@ function addWindow(axis, fixedCoord, normalSign, centerAlong, centerY) {{
   mhMesh.position.copy(glassMesh.position);
   windowGroup.add(mvMesh);
   windowGroup.add(mhMesh);
+  return {{glass: glassMesh, frame: frameMesh}};
 }}
 
 function buildWallWithOpenings(group, totalLength, height, axis, fixedCoord, normalSign, baseX_or_Z, openings) {{
@@ -1646,30 +1670,37 @@ function buildWallWithOpenings(group, totalLength, height, axis, fixedCoord, nor
   function segCenterWorld(localStart, localLen) {{
     return baseX_or_Z + localStart + localLen/2;
   }}
+  const meshes = [];
   for (const op of sorted) {{
     const opStart = op.center - op.width/2 - baseX_or_Z;
     const opEnd = op.center + op.width/2 - baseX_or_Z;
     const segLen = opStart - cursor;
     if (segLen > 0.02) {{
-      addWallSegment(group, segLen, height, axis, normalSign, fixedCoord, segCenterWorld(cursor, segLen), 0);
+      const m = addWallSegment(group, segLen, height, axis, normalSign, fixedCoord, segCenterWorld(cursor, segLen), 0);
+      meshes.push(m);
     }}
     const sill = op.sillY !== undefined ? op.sillY : 0;
     const openTop = sill + (op.openHeight !== undefined ? op.openHeight : height);
     if (sill > 0.02) {{
-      addWallSegment(group, op.width, sill, axis, normalSign, fixedCoord, baseX_or_Z + op.center, 0);
+      const m = addWallSegment(group, op.width, sill, axis, normalSign, fixedCoord, baseX_or_Z + op.center, 0);
+      meshes.push(m);
     }}
     if (openTop < height - 0.02) {{
-      addWallSegment(group, op.width, height - openTop, axis, normalSign, fixedCoord, baseX_or_Z + op.center, openTop);
+      const m = addWallSegment(group, op.width, height - openTop, axis, normalSign, fixedCoord, baseX_or_Z + op.center, openTop);
+      meshes.push(m);
     }}
     cursor = opEnd;
   }}
   const tailLen = totalLength - cursor;
   if (tailLen > 0.02) {{
-    addWallSegment(group, tailLen, height, axis, normalSign, fixedCoord, segCenterWorld(cursor, tailLen), 0);
+    const m = addWallSegment(group, tailLen, height, axis, normalSign, fixedCoord, segCenterWorld(cursor, tailLen), 0);
+    meshes.push(m);
   }}
   if (sorted.length === 0) {{
-    addWallSegment(group, totalLength, height, axis, normalSign, fixedCoord, baseX_or_Z + totalLength/2, 0);
+    const m = addWallSegment(group, totalLength, height, axis, normalSign, fixedCoord, baseX_or_Z + totalLength/2, 0);
+    meshes.push(m);
   }}
+  return meshes;
 }}
 
 function addGirtSegments(totalLength, gh, axis, fixedCoord, normalSign, baseX_or_Z, openings) {{
@@ -1706,144 +1737,187 @@ function addGirtSegments(totalLength, gh, axis, fixedCoord, normalSign, baseX_or
   if (totalLength - cursor > 0.02) addSeg(cursor, totalLength - cursor);
 }}
 
-// ========== DEVORLAR ==========
+// ========== DEVORLARNI QURISH FUNKSIYASI ==========
+function buildAllWalls() {{
+  // Eski devorlarni tozalash
+  while(wallGroup.children.length > 0) wallGroup.remove(wallGroup.children[0]);
+  while(windowGroup.children.length > 0) windowGroup.remove(windowGroup.children[0]);
+  while(doorGroup.children.length > 0) doorGroup.remove(doorGroup.children[0]);
+  wallSegments = [];
+  windowMeshes = [];
+  doorMeshes = [];
 
-// Old devor (Z = W) - old darvozalar
-{{
-  const frontOpenings = DOOR_FRONT_POSITIONS.map(dx => ({{
-    center: dx, width: DOOR_FRONT_W, sillY: 0, openHeight: DOOR_FRONT_H
-  }}));
-  buildWallWithOpenings(wallGroup, L, H, 'x', W, 1, 0, frontOpenings);
-  const wallGirtHeights = [H * 0.18, H * 0.5, H * 0.82];
-  wallGirtHeights.forEach(gh => addGirtSegments(L, gh, 'x', W, 1, 0, frontOpenings));
-}}
-
-// Orqa devor (Z = 0) - orqa darvozalar
-{{
-  const backOpenings = DOOR_BACK_POSITIONS.map(dx => ({{
-    center: dx, width: DOOR_BACK_W, sillY: 0, openHeight: DOOR_BACK_H
-  }}));
-  // Derazalarni ham qo'shamiz
-  for (let wi = 0; wi < WIN_COUNT; wi++) {{
-    const wx = WIN_POSITIONS[wi][0];
-    const wy = WIN_POSITIONS[wi][1];
-    backOpenings.push({{ center: wx, width: WIN_W, sillY: wy - WIN_H/2, openHeight: WIN_H }});
-    addWindow('x', 0, -1, wx, wy);
+  // Old devor (Z = W) - old darvozalar
+  {{
+    const frontOpenings = DOOR_FRONT_POSITIONS.map(dx => ({{
+      center: dx, width: DOOR_FRONT_W, sillY: 0, openHeight: DOOR_FRONT_H
+    }}));
+    // Derazalarni qo'shish (faqat darvoza bilan to'g'ri kelmasa)
+    for (let wi = 0; wi < WIN_POSITIONS.length; wi++) {{
+      const wx = WIN_POSITIONS[wi][0];
+      const wy = WIN_POSITIONS[wi][1];
+      // Darvoza bilan to'g'ri kelishini tekshirish
+      let blocked = false;
+      for (const door of frontOpenings) {{
+        if (Math.abs(wx - door.center) < (WIN_W + DOOR_FRONT_W) / 2) {{
+          blocked = true;
+          break;
+        }}
+      }}
+      if (!blocked) {{
+        frontOpenings.push({{ center: wx, width: WIN_W, sillY: wy - WIN_H/2, openHeight: WIN_H }});
+        addWindowMesh('x', W, 1, wx, wy);
+      }}
+    }}
+    buildWallWithOpenings(wallGroup, L, H, 'x', W, 1, 0, frontOpenings);
+    const wallGirtHeights = [H * 0.18, H * 0.5, H * 0.82];
+    wallGirtHeights.forEach(gh => addGirtSegments(L, gh, 'x', W, 1, 0, frontOpenings));
   }}
-  buildWallWithOpenings(wallGroup, L, H, 'x', 0, -1, 0, backOpenings);
-  const wallGirtHeightsBack = [H * 0.18, H * 0.5, H * 0.82];
-  wallGirtHeightsBack.forEach(gh => addGirtSegments(L, gh, 'x', 0, -1, 0, backOpenings));
+
+  // Orqa devor (Z = 0) - orqa darvozalar
+  {{
+    const backOpenings = DOOR_BACK_POSITIONS.map(dx => ({{
+      center: dx, width: DOOR_BACK_W, sillY: 0, openHeight: DOOR_BACK_H
+    }}));
+    for (let wi = 0; wi < WIN_POSITIONS.length; wi++) {{
+      const wx = WIN_POSITIONS[wi][0];
+      const wy = WIN_POSITIONS[wi][1];
+      let blocked = false;
+      for (const door of backOpenings) {{
+        if (Math.abs(wx - door.center) < (WIN_W + DOOR_BACK_W) / 2) {{
+          blocked = true;
+          break;
+        }}
+      }}
+      if (!blocked) {{
+        backOpenings.push({{ center: wx, width: WIN_W, sillY: wy - WIN_H/2, openHeight: WIN_H }});
+        addWindowMesh('x', 0, -1, wx, wy);
+      }}
+    }}
+    buildWallWithOpenings(wallGroup, L, H, 'x', 0, -1, 0, backOpenings);
+    const wallGirtHeightsBack = [H * 0.18, H * 0.5, H * 0.82];
+    wallGirtHeightsBack.forEach(gh => addGirtSegments(L, gh, 'x', 0, -1, 0, backOpenings));
+  }}
+
+  // Chap devor (X = 0) - chap darvozalar
+  {{
+    const leftOpenings = DOOR_LEFT_POSITIONS.map(dz => ({{
+      center: dz, width: DOOR_LEFT_W, sillY: 0, openHeight: DOOR_LEFT_H
+    }}));
+    // Chap devorga deraza qo'yilmaydi (faqat old/orqa devorlarga)
+    buildWallWithOpenings(wallGroup, W, H, 'z', 0, -1, 0, leftOpenings);
+    const wallGirtHeightsLeft = [H * 0.18, H * 0.5, H * 0.82];
+    wallGirtHeightsLeft.forEach(gh => addGirtSegments(W, gh, 'z', 0, -1, 0, leftOpenings));
+  }}
+
+  // O'ng devor (X = L) - o'ng darvozalar
+  {{
+    const rightOpenings = DOOR_RIGHT_POSITIONS.map(dz => ({{
+      center: dz, width: DOOR_RIGHT_W, sillY: 0, openHeight: DOOR_RIGHT_H
+    }}));
+    buildWallWithOpenings(wallGroup, W, H, 'z', L, 1, 0, rightOpenings);
+    const wallGirtHeightsRight = [H * 0.18, H * 0.5, H * 0.82];
+    wallGirtHeightsRight.forEach(gh => addGirtSegments(W, gh, 'z', L, 1, 0, rightOpenings));
+  }}
+
+  // ===== DARVOZALAR 3D MODELLARI =====
+  // Old darvozalar (Z = W)
+  const doorZ_front = W + T/2 + 0.04;
+  DOOR_FRONT_POSITIONS.forEach((doorX) => {{
+    const dw = Math.max(1.0, DOOR_FRONT_W);
+    const dh = Math.max(1.0, DOOR_FRONT_H);
+    const panelWidth = dw;
+    const panelHeight = dh / 4;
+    const panelThick = 0.05;
+    for (let i = 0; i < 4; i++) {{
+      const panel = new THREE.Mesh(new THREE.BoxGeometry(panelWidth - 0.1, panelHeight - 0.02, panelThick), matDoorPanel);
+      panel.position.set(doorX, (i + 0.5) * panelHeight, doorZ_front);
+      panel.castShadow = true;
+      doorGroup.add(panel);
+      doorMeshes.push(panel);
+      for (let v = 0; v < 4; v++) {{
+        const vertLine = new THREE.Mesh(new THREE.BoxGeometry(0.012, panelHeight - 0.04, panelThick + 0.01), matSteel);
+        vertLine.position.set(doorX - panelWidth/2 + 0.15 + v * (panelWidth - 0.3)/3, (i + 0.5) * panelHeight, doorZ_front);
+        doorGroup.add(vertLine);
+        doorMeshes.push(vertLine);
+      }}
+    }}
+    const doorFrameOuter = new THREE.Mesh(new THREE.BoxGeometry(dw + 0.15, dh + 0.15, 0.08), matDoorFrame);
+    doorFrameOuter.position.set(doorX, dh/2, W + T/2 + 0.01);
+    doorGroup.add(doorFrameOuter);
+    doorMeshes.push(doorFrameOuter);
+    const doorFrameInner = new THREE.Mesh(new THREE.BoxGeometry(dw - 0.02, dh - 0.02, 0.06), matSteel);
+    doorFrameInner.position.set(doorX, dh/2, W + T/2 + 0.03);
+    doorGroup.add(doorFrameInner);
+    doorMeshes.push(doorFrameInner);
+  }});
+
+  // Orqa darvozalar (Z = 0)
+  const doorZ_back = -T/2 - 0.04;
+  DOOR_BACK_POSITIONS.forEach((doorX) => {{
+    const dw = Math.max(1.0, DOOR_BACK_W);
+    const dh = Math.max(1.0, DOOR_BACK_H);
+    const panelWidth = dw;
+    const panelHeight = dh / 4;
+    const panelThick = 0.05;
+    for (let i = 0; i < 4; i++) {{
+      const panel = new THREE.Mesh(new THREE.BoxGeometry(panelWidth - 0.1, panelHeight - 0.02, panelThick), matDoorPanel);
+      panel.position.set(doorX, (i + 0.5) * panelHeight, doorZ_back);
+      panel.castShadow = true;
+      doorGroup.add(panel);
+      doorMeshes.push(panel);
+    }}
+    const doorFrameOuter = new THREE.Mesh(new THREE.BoxGeometry(dw + 0.15, dh + 0.15, 0.08), matDoorFrame);
+    doorFrameOuter.position.set(doorX, dh/2, -T/2 - 0.01);
+    doorGroup.add(doorFrameOuter);
+    doorMeshes.push(doorFrameOuter);
+  }});
+
+  // Chap darvozalar (X = 0)
+  const doorX_left = -T/2 - 0.04;
+  DOOR_LEFT_POSITIONS.forEach((doorZ) => {{
+    const dw = Math.max(1.0, DOOR_LEFT_W);
+    const dh = Math.max(1.0, DOOR_LEFT_H);
+    const panelHeight = dh / 4;
+    const panelThick = 0.05;
+    for (let i = 0; i < 4; i++) {{
+      const panel = new THREE.Mesh(new THREE.BoxGeometry(panelThick, panelHeight - 0.02, dw - 0.1), matDoorPanel);
+      panel.position.set(doorX_left, (i + 0.5) * panelHeight, doorZ);
+      panel.castShadow = true;
+      doorGroup.add(panel);
+      doorMeshes.push(panel);
+    }}
+    const doorFrameOuter = new THREE.Mesh(new THREE.BoxGeometry(0.08, dh + 0.15, dw + 0.15), matDoorFrame);
+    doorFrameOuter.position.set(-T/2 - 0.01, dh/2, doorZ);
+    doorGroup.add(doorFrameOuter);
+    doorMeshes.push(doorFrameOuter);
+  }});
+
+  // O'ng darvozalar (X = L)
+  const doorX_right = L + T/2 + 0.04;
+  DOOR_RIGHT_POSITIONS.forEach((doorZ) => {{
+    const dw = Math.max(1.0, DOOR_RIGHT_W);
+    const dh = Math.max(1.0, DOOR_RIGHT_H);
+    const panelHeight = dh / 4;
+    const panelThick = 0.05;
+    for (let i = 0; i < 4; i++) {{
+      const panel = new THREE.Mesh(new THREE.BoxGeometry(panelThick, panelHeight - 0.02, dw - 0.1), matDoorPanel);
+      panel.position.set(doorX_right, (i + 0.5) * panelHeight, doorZ);
+      panel.castShadow = true;
+      doorGroup.add(panel);
+      doorMeshes.push(panel);
+    }}
+    const doorFrameOuter = new THREE.Mesh(new THREE.BoxGeometry(0.08, dh + 0.15, dw + 0.15), matDoorFrame);
+    doorFrameOuter.position.set(L + T/2 + 0.01, dh/2, doorZ);
+    doorGroup.add(doorFrameOuter);
+    doorMeshes.push(doorFrameOuter);
+  }});
 }}
 
-// Chap devor (X = 0) - chap darvozalar
-{{
-  const leftOpenings = DOOR_LEFT_POSITIONS.map(dz => ({{
-    center: dz, width: DOOR_LEFT_W, sillY: 0, openHeight: DOOR_LEFT_H
-  }}));
-  buildWallWithOpenings(wallGroup, W, H, 'z', 0, -1, 0, leftOpenings);
-  const wallGirtHeightsLeft = [H * 0.18, H * 0.5, H * 0.82];
-  wallGirtHeightsLeft.forEach(gh => addGirtSegments(W, gh, 'z', 0, -1, 0, leftOpenings));
-}}
-
-// O'ng devor (X = L) - o'ng darvozalar
-{{
-  const rightOpenings = DOOR_RIGHT_POSITIONS.map(dz => ({{
-    center: dz, width: DOOR_RIGHT_W, sillY: 0, openHeight: DOOR_RIGHT_H
-  }}));
-  buildWallWithOpenings(wallGroup, W, H, 'z', L, 1, 0, rightOpenings);
-  const wallGirtHeightsRight = [H * 0.18, H * 0.5, H * 0.82];
-  wallGirtHeightsRight.forEach(gh => addGirtSegments(W, gh, 'z', L, 1, 0, rightOpenings));
-}}
-
+// Devorlarni qurish
+buildAllWalls();
 buildingGroup.add(wallGroup);
 buildingGroup.add(windowGroup);
-
-// ============================================================
-// DOORS (3D models)
-// ============================================================
-
-// Old darvozalar (Z = W)
-const doorZ_front = W + T/2 + 0.04;
-DOOR_FRONT_POSITIONS.forEach((doorX) => {{
-  const dw = Math.max(1.0, DOOR_FRONT_W);
-  const dh = Math.max(1.0, DOOR_FRONT_H);
-  const panelWidth = dw;
-  const panelHeight = dh / 4;
-  const panelThick = 0.05;
-  for (let i = 0; i < 4; i++) {{
-    const panel = new THREE.Mesh(new THREE.BoxGeometry(panelWidth - 0.1, panelHeight - 0.02, panelThick), matDoorPanel);
-    panel.position.set(doorX, (i + 0.5) * panelHeight, doorZ_front);
-    panel.castShadow = true;
-    doorGroup.add(panel);
-    for (let v = 0; v < 4; v++) {{
-      const vertLine = new THREE.Mesh(new THREE.BoxGeometry(0.012, panelHeight - 0.04, panelThick + 0.01), matSteel);
-      vertLine.position.set(doorX - panelWidth/2 + 0.15 + v * (panelWidth - 0.3)/3, (i + 0.5) * panelHeight, doorZ_front);
-      doorGroup.add(vertLine);
-    }}
-  }}
-  const doorFrameOuter = new THREE.Mesh(new THREE.BoxGeometry(dw + 0.15, dh + 0.15, 0.08), matDoorFrame);
-  doorFrameOuter.position.set(doorX, dh/2, W + T/2 + 0.01);
-  doorGroup.add(doorFrameOuter);
-  const doorFrameInner = new THREE.Mesh(new THREE.BoxGeometry(dw - 0.02, dh - 0.02, 0.06), matSteel);
-  doorFrameInner.position.set(doorX, dh/2, W + T/2 + 0.03);
-  doorGroup.add(doorFrameInner);
-}});
-
-// Orqa darvozalar (Z = 0)
-const doorZ_back = -T/2 - 0.04;
-DOOR_BACK_POSITIONS.forEach((doorX) => {{
-  const dw = Math.max(1.0, DOOR_BACK_W);
-  const dh = Math.max(1.0, DOOR_BACK_H);
-  const panelWidth = dw;
-  const panelHeight = dh / 4;
-  const panelThick = 0.05;
-  for (let i = 0; i < 4; i++) {{
-    const panel = new THREE.Mesh(new THREE.BoxGeometry(panelWidth - 0.1, panelHeight - 0.02, panelThick), matDoorPanel);
-    panel.position.set(doorX, (i + 0.5) * panelHeight, doorZ_back);
-    panel.castShadow = true;
-    doorGroup.add(panel);
-  }}
-  const doorFrameOuter = new THREE.Mesh(new THREE.BoxGeometry(dw + 0.15, dh + 0.15, 0.08), matDoorFrame);
-  doorFrameOuter.position.set(doorX, dh/2, -T/2 - 0.01);
-  doorGroup.add(doorFrameOuter);
-}});
-
-// Chap darvozalar (X = 0)
-const doorX_left = -T/2 - 0.04;
-DOOR_LEFT_POSITIONS.forEach((doorZ) => {{
-  const dw = Math.max(1.0, DOOR_LEFT_W);
-  const dh = Math.max(1.0, DOOR_LEFT_H);
-  const panelHeight = dh / 4;
-  const panelThick = 0.05;
-  for (let i = 0; i < 4; i++) {{
-    const panel = new THREE.Mesh(new THREE.BoxGeometry(panelThick, panelHeight - 0.02, dw - 0.1), matDoorPanel);
-    panel.position.set(doorX_left, (i + 0.5) * panelHeight, doorZ);
-    panel.castShadow = true;
-    doorGroup.add(panel);
-  }}
-  const doorFrameOuter = new THREE.Mesh(new THREE.BoxGeometry(0.08, dh + 0.15, dw + 0.15), matDoorFrame);
-  doorFrameOuter.position.set(-T/2 - 0.01, dh/2, doorZ);
-  doorGroup.add(doorFrameOuter);
-}});
-
-// O'ng darvozalar (X = L)
-const doorX_right = L + T/2 + 0.04;
-DOOR_RIGHT_POSITIONS.forEach((doorZ) => {{
-  const dw = Math.max(1.0, DOOR_RIGHT_W);
-  const dh = Math.max(1.0, DOOR_RIGHT_H);
-  const panelHeight = dh / 4;
-  const panelThick = 0.05;
-  for (let i = 0; i < 4; i++) {{
-    const panel = new THREE.Mesh(new THREE.BoxGeometry(panelThick, panelHeight - 0.02, dw - 0.1), matDoorPanel);
-    panel.position.set(doorX_right, (i + 0.5) * panelHeight, doorZ);
-    panel.castShadow = true;
-    doorGroup.add(panel);
-  }}
-  const doorFrameOuter = new THREE.Mesh(new THREE.BoxGeometry(0.08, dh + 0.15, dw + 0.15), matDoorFrame);
-  doorFrameOuter.position.set(L + T/2 + 0.01, dh/2, doorZ);
-  doorGroup.add(doorFrameOuter);
-}});
-
 buildingGroup.add(doorGroup);
 
 // ============================================================
@@ -1940,7 +2014,6 @@ const snowCapMat = new THREE.MeshStandardMaterial({{
   color:0xffffff, roughness:0.85, metalness:0.0, 
   transparent:true, opacity:0.0, depthWrite:false, side:THREE.DoubleSide 
 }});
-
 
 // ---- YOMG'IR (750 ta chiziq) ----
 let RAIN_COUNT = 750;
@@ -2149,7 +2222,7 @@ document.getElementById('chkWin').addEventListener('change', e => windowGroup.vi
 document.getElementById('chkDoor').addEventListener('change', e => doorGroup.visible = e.target.checked);
 
 // ============================================================
-// WEATHER UPDATE FUNCTIONS (with particle density control)
+// WEATHER UPDATE FUNCTIONS
 // ============================================================
 function updateSnowVisual() {{
   const pct = parseInt(document.getElementById('sldSnow').value, 10);
@@ -2158,7 +2231,6 @@ function updateSnowVisual() {{
   WEATHER.snowIntensity = SNOW_INTENSITY_BASE * (pct / 100);
   WEATHER.snowFallMult = 0.4 + (pct / 100) * 1.6;
   
-  // Dynamic particle count: 200 at 0%, up to 3000 at 100%
   const targetCount = Math.round(200 + (pct / 100) * 2800);
   updateParticleCount(snowGeo, targetCount);
   
@@ -2210,6 +2282,219 @@ document.getElementById('btnQuake').addEventListener('click', () => {{
   startEarthquake();
 }});
 
+// ============================================================
+// DRAG & DROP - Interaktiv joylashuvni o'zgartirish
+// ============================================================
+let dragMode = false;
+let dragTarget = null;
+let dragStartMouse = null;
+let dragStartPos = null;
+let dragElement = null;
+let dragAxis = 'x';
+let dragWall = 'front';
+
+document.getElementById('btnDragMode').addEventListener('click', function() {{
+  dragMode = !dragMode;
+  this.textContent = dragMode ? ' siljitish faol' : 'siljitish';
+  this.style.background = dragMode ? '#4CAF50' : '#ff5722';
+  if (dragMode) {{
+    createDragMarkers();
+  }} else {{
+    removeDragMarkers();
+  }}
+}});
+
+function createDragMarkers() {{
+  // Oldingi markerlarni tozalash
+  removeDragMarkers();
+  
+  // Darvozalar uchun markerlar
+  DOOR_FRONT_POSITIONS.forEach((x, i) => {{
+    const marker = document.createElement('div');
+    marker.className = 'drag-marker door';
+    marker.dataset.type = 'door';
+    marker.dataset.wall = 'front';
+    marker.dataset.index = i;
+    marker.dataset.x = x;
+    marker.title = `Old darvoza ${i+1}`;
+    document.body.appendChild(marker);
+    positionMarker(marker, x, W, 'front');
+    addDragEvents(marker);
+  }});
+  
+  DOOR_BACK_POSITIONS.forEach((x, i) => {{
+    const marker = document.createElement('div');
+    marker.className = 'drag-marker door';
+    marker.dataset.type = 'door';
+    marker.dataset.wall = 'back';
+    marker.dataset.index = i;
+    marker.dataset.x = x;
+    marker.title = `Orqa darvoza ${i+1}`;
+    document.body.appendChild(marker);
+    positionMarker(marker, x, 0, 'back');
+    addDragEvents(marker);
+  }});
+  
+
+}}
+
+function removeDragMarkers() {{
+  document.querySelectorAll('.drag-marker').forEach(el => el.remove());
+  document.querySelectorAll('.drag-label').forEach(el => el.remove());
+}}
+
+function positionMarker(marker, x, z, wall) {{
+  // 3D pozitsiyani 2D ekran koordinatasiga o'tkazish
+  const worldPos = new THREE.Vector3(x, H * 0.5, z);
+  const vector = worldPos.clone().project(camera);
+  const widthHalf = window.innerWidth / 2;
+  const heightHalf = window.innerHeight / 2;
+  const px = (vector.x * widthHalf) + widthHalf;
+  const py = -(vector.y * heightHalf) + heightHalf;
+  
+  marker.style.left = px - 6 + 'px';
+  marker.style.top = py - 6 + 'px';
+  
+  // Yorliq qo'shish
+  const label = document.createElement('div');
+  label.className = 'drag-label';
+  label.textContent = marker.dataset.type === 'door' ? 'darvoza' : 'darvoza';
+  label.style.left = px - 6 + 'px';
+  label.style.top = py - 20 + 'px';
+  document.body.appendChild(label);
+  marker.dataset.labelId = label.id || (label.id = 'label_' + Math.random());
+}}
+
+function addDragEvents(marker) {{
+  marker.addEventListener('mousedown', function(e) {{
+    if (!dragMode) return;
+    e.preventDefault();
+    e.stopPropagation();
+    dragTarget = this;
+    dragStartMouse = {{x: e.clientX, y: e.clientY}};
+    dragStartPos = {{
+      x: parseFloat(this.dataset.x),
+      y: parseFloat(this.dataset.y || 0)
+    }};
+    dragWall = this.dataset.wall || 'front';
+    dragAxis = this.dataset.type === 'window' ? 'x' : 'x';
+    this.style.cursor = 'grabbing';
+  }});
+}}
+
+document.addEventListener('mousemove', function(e) {{
+  if (!dragMode || !dragTarget) return;
+  e.preventDefault();
+  
+  const dx = (e.clientX - dragStartMouse.x) / 200 * L;
+  const newX = Math.max(0.5, Math.min(L - 0.5, dragStartPos.x + dx));
+  
+  const type = dragTarget.dataset.type;
+  const index = parseInt(dragTarget.dataset.index);
+  
+  if (type === 'door') {{
+    const wall = dragTarget.dataset.wall;
+    if (wall === 'front') {{
+      // Darvoza boshqa darvozalar va derazalar bilan to'g'ri kelmasligini tekshirish
+      let blocked = false;
+      for (let i = 0; i < DOOR_FRONT_POSITIONS.length; i++) {{
+        if (i !== index && Math.abs(DOOR_FRONT_POSITIONS[i] - newX) < DOOR_FRONT_W) {{
+          blocked = true;
+          break;
+        }}
+      }}
+      if (!blocked) {{
+        DOOR_FRONT_POSITIONS[index] = newX;
+        dragTarget.dataset.x = newX;
+        positionMarker(dragTarget, newX, W, 'front');
+        rebuildBuilding();
+      }}
+    }} else if (wall === 'back') {{
+      let blocked = false;
+      for (let i = 0; i < DOOR_BACK_POSITIONS.length; i++) {{
+        if (i !== index && Math.abs(DOOR_BACK_POSITIONS[i] - newX) < DOOR_BACK_W) {{
+          blocked = true;
+          break;
+        }}
+      }}
+      if (!blocked) {{
+        DOOR_BACK_POSITIONS[index] = newX;
+        dragTarget.dataset.x = newX;
+        positionMarker(dragTarget, newX, 0, 'back');
+        rebuildBuilding();
+      }}
+    }}
+  }} else if (type === 'window') {{
+    let blocked = false;
+    // Deraza darvozalar bilan to'g'ri kelmasligini tekshirish
+    for (const doorX of DOOR_FRONT_POSITIONS) {{
+      if (Math.abs(newX - doorX) < (WIN_W + DOOR_FRONT_W) / 2) {{
+        blocked = true;
+        break;
+      }}
+    }}
+    for (const doorX of DOOR_BACK_POSITIONS) {{
+      if (Math.abs(newX - doorX) < (WIN_W + DOOR_BACK_W) / 2) {{
+        blocked = true;
+        break;
+      }}
+    }}
+    // Deraza ustunlar orasida ekanligini tekshirish
+    let onColumn = false;
+    for (const interval of columnIntervals) {{
+      if (newX >= interval.start + 0.3 && newX <= interval.end - 0.3) {{
+        onColumn = true;
+        break;
+      }}
+    }}
+    if (!blocked && onColumn) {{
+      WIN_POSITIONS[index][0] = newX;
+      dragTarget.dataset.x = newX;
+      positionMarker(dragTarget, newX, W, 'front');
+      rebuildBuilding();
+    }}
+  }}
+}});
+
+document.addEventListener('mouseup', function(e) {{
+  if (dragTarget) {{
+    dragTarget.style.cursor = 'grab';
+    dragTarget = null;
+    dragStartMouse = null;
+    dragStartPos = null;
+  }}
+}});
+
+function rebuildBuilding() {{
+  // Devorlar, derazalar va eshiklarni qayta qurish
+  // Eski ob'ektlarni tozalash
+  while(wallGroup.children.length > 0) wallGroup.remove(wallGroup.children[0]);
+  while(windowGroup.children.length > 0) windowGroup.remove(windowGroup.children[0]);
+  while(doorGroup.children.length > 0) doorGroup.remove(doorGroup.children[0]);
+  
+  // Yangi devorlarni qurish
+  buildAllWalls();
+  
+  // Markerlarni yangilash
+  if (dragMode) {{
+    removeDragMarkers();
+    createDragMarkers();
+  }}
+}}
+
+// ============================================================
+// Resize
+// ============================================================
+window.addEventListener('resize', () => {{
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  lblRen.setSize(innerWidth, innerHeight);
+}});
+
+// ============================================================
+// Animation loop
+// ============================================================
 let __lastFrameTime = performance.now();
 (function animate() {{
   requestAnimationFrame(animate);
@@ -2225,13 +2510,6 @@ let __lastFrameTime = performance.now();
   lblRen.render(scene, camera);
 }})();
 
-window.addEventListener('resize', () => {{
-  camera.aspect = innerWidth / innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
-  lblRen.setSize(innerWidth, innerHeight);
-}});
-
 window.addEventListener('load', () => {{
   const l = document.getElementById('loading');
   if (l) l.style.display = 'none';
@@ -2244,6 +2522,25 @@ setTimeout(() => {{
 </body>
 </html>"""
     return html
+
+def calculate_door_positions(length, count, door_width):
+    """Darvozalar joylashuvini hisoblash"""
+    positions = []
+    if count > 0 and length > 0:
+        total_w = count * door_width
+        if total_w < length:
+            gap = (length - total_w) / (count + 1)
+            for i in range(count):
+                dx = gap * (i + 1) + door_width * (i + 0.5)
+                positions.append(dx)
+        else:
+            seg = length / count
+            for i in range(count):
+                positions.append(seg * (i + 0.5))
+    return positions
+
+
+
 
 
 def calculate_construction_materials(params):
@@ -2533,19 +2830,21 @@ def calculate_construction_materials(params):
         "corrosion_protection": metal.get("corrosion_protection", False),
     }
 
-# ============================================================
-# ========== YANGI QO'SHILADIGAN FUNKSIYALAR ==========
 def compute_purlins(L, W, H, roof_pitch, purlin_profile="Profil 120x60x4 mm", 
                     wall_purlin_profile="Profil 100x50x4 mm", 
                     bracing_profile="Shveller 14P", panel_width=1.0,
                     system_type="LMK (Yengil Metall)", factors=None):
     """
-    Progonlar (purlins) hisobi - LMK/LSTK uchun
+    Darslik II.2-band asosida progonlar hisobi
     """
     if factors is None:
         factors = get_construction_system_factors(system_type, L, W, H)
     
     pitch_rad = math.radians(roof_pitch)
+    
+    # Ustunlar sonini olish
+    layout = compute_column_layout(L, W, column_spacing=8.5)
+    truss_count = layout["n_cols_x"]
     
     # Progonlarning kg/m og'irliklari
     purlin_kg_m = get_profile_weight("purlin", purlin_profile) * factors["weight_multiplier"]
@@ -2572,9 +2871,8 @@ def compute_purlins(L, W, H, roof_pitch, purlin_profile="Profil 120x60x4 mm",
     else:
         wall_rows = 10
     
-    # 🔽 LSTK uchun progonlar oralig'i kichikroq
     if "LSTK" in system_type:
-        wall_rows = min(wall_rows + 2, 12)  # Ko'proq progon
+        wall_rows = min(wall_rows + 2, 12)
     
     wall_purlins_m = wall_rows * 2 * (L + W)
     wall_purlins_kg = wall_purlins_m * wall_purlin_kg_m
@@ -2589,12 +2887,13 @@ def compute_purlins(L, W, H, roof_pitch, purlin_profile="Profil 120x60x4 mm",
     else:
         roof_rows = 6
     
-    # 🔽 LSTK uchun ko'proq progon
     if "LSTK" in system_type:
         roof_rows += 1
     
     slope_length = W / (2 * math.cos(pitch_rad)) if roof_pitch > 0 else W / 2
-    roof_purlins_m = roof_rows * 2 * slope_length * 2
+    
+    # ✅ TO'G'RILANGAN: truss_count bilan ko'paytirish
+    roof_purlins_m = roof_rows * 2 * slope_length * truss_count
     roof_purlins_kg = roof_purlins_m * purlin_kg_m
     
     # ===== 3. QOSHIMCHA =====
@@ -2608,10 +2907,9 @@ def compute_purlins(L, W, H, roof_pitch, purlin_profile="Profil 120x60x4 mm",
     extra_braces_kg = extra_braces_m * bracing_kg_m
     
     # ===== 4. QOSHIMCHA OGIRLIK =====
-    additional = (wall_purlins_kg + roof_purlins_kg) * 0.08 * factors["weight_multiplier"]
     
     # ===== 5. JAMI =====
-    total_kg = wall_purlins_kg + roof_purlins_kg + wind_braces_kg + extra_braces_kg + additional
+    total_kg = wall_purlins_kg + roof_purlins_kg + wind_braces_kg + extra_braces_kg
     total_m = wall_purlins_m + roof_purlins_m + wind_braces_m + extra_braces_m
     
     return {
@@ -2626,7 +2924,6 @@ def compute_purlins(L, W, H, roof_pitch, purlin_profile="Profil 120x60x4 mm",
         "roof_purlins_kg": round(roof_purlins_kg, 1),
         "wind_braces_kg": round(wind_braces_kg, 1),
         "extra_braces_kg": round(extra_braces_kg, 1),
-        "additional_kg": round(additional, 1),
         "total_kg": round(total_kg, 1),
         "total_tonna": round(total_kg / 1000, 3),
         "purlin_profile": purlin_profile,
@@ -2636,51 +2933,62 @@ def compute_purlins(L, W, H, roof_pitch, purlin_profile="Profil 120x60x4 mm",
         "bracing_profile": bracing_profile,
         "bracing_kg_m": round(bracing_kg_m, 2),
     }
+
+
+
+
 def compute_bracing(L, W, H, seismic_zone, wind_region="B"):
     """
-    SNiP II-23-81 bo'yicha bog'lamalar hisobi
+    Darslik VIII.7-band asosida bog'lamalar hisobi
     """
-    horizontal_spacing = 6.0
-    n_horizontal = int(math.ceil(max(L, W) / horizontal_spacing))
-    horizontal_m = n_horizontal * (L + W) * 0.3
+    # Ustunlar sonini olish
+    layout = compute_column_layout(L, W, column_spacing=8.5)
+    n_cols_x = layout["n_cols_x"]
     
-    vertical_spacing = 6.0
-    n_vertical_x = int(math.ceil(L / vertical_spacing))
-    n_vertical_z = int(math.ceil(W / vertical_spacing))
-    vertical_m = (n_vertical_x + n_vertical_z) * H * 0.5
+    # ===== 1. VERTIKAL BOG'LAMALAR =====
+    # Darslik VIII.7-band: vertikal bog'lamalar ustunlar soniga bog'liq
+    vert_bog_m = n_cols_x * H * 0.6
     
-    seismic_coeff = 1.0
-    seismic_m = (L + W) * 0.3 * seismic_coeff
+    # ===== 2. GORIZONTAL BOG'LAMALAR =====
+    # Darslik VIII.7-band: gorizontal bog'lamalar
+    goriz_bog_m = (L + W) * 0.6
     
-    diagonal_m = math.sqrt(L**2 + W**2) * 0.5 
+    # ===== 3. SEYSiMIK BOG'LAMALAR =====
+    seismic_coeff = SEISMIC_ZONES.get(seismic_zone, {"coefficient": 0.2})["coefficient"]
+    seismic_m = (L + W) * 0.4 * seismic_coeff
     
-    total_m = horizontal_m + vertical_m + seismic_m + diagonal_m
-    weight_per_m = 15.0
+    # ===== 4. JAMI =====
+    # ✅ TO'G'RILANGAN: diagonal elementlar olib tashlandi
+    total_m = vert_bog_m + goriz_bog_m + seismic_m
+    
+    # ✅ TO'G'RILANGAN: Shveller 14P uchun 12.3 kg/m
+    weight_per_m = 12.3  # GOST 8240-97, Shveller 14P
     total_kg = total_m * weight_per_m
     
     return {
-        "horizontal_m": round(horizontal_m, 1),
-        "vertical_m": round(vertical_m, 1),
+        "vertical_m": round(vert_bog_m, 1),
+        "horizontal_m": round(goriz_bog_m, 1),
         "seismic_m": round(seismic_m, 1),
-        "diagonal_m": round(diagonal_m, 1),
         "total_m": round(total_m, 1),
         "weight_per_m": weight_per_m,
         "total_kg": round(total_kg, 1),
         "total_tonna": round(total_kg / 1000, 3)
     }
 
-
 def compute_connections(metal_kg, connection_type="mixed"):
+    """
+    Darslik I.1-band asosida birikma detallari hisobi
+    """
+    # Darslik I.1-band: payvand birikma 4%, boltli birikma 6.5%
     coefficients = {
         "bolted": {"default": 0.065},
         "welded": {"default": 0.05},
         "mixed": {"default": 0.08}
     }
     coeff = coefficients.get(connection_type, coefficients["mixed"])
-    weight_kg = metal_kg * coeff["default"]
     
-    # 🔽 DEBUG
-    print(f"compute_connections: metal_kg={metal_kg}, coeff={coeff['default']}, weight_kg={weight_kg}")
+    # ✅ TO'G'RILANGAN: faqat asosiy metall asosida
+    weight_kg = metal_kg * coeff["default"]
     
     return {
         "type": connection_type,
@@ -2695,7 +3003,7 @@ def compute_connections(metal_kg, connection_type="mixed"):
     }
 def calculate_advanced_materials(params):
     """
-    Kengaytirilgan materiallar hisobi - barcha konstruktiv elementlarni o'z ichiga oladi
+    Darslik asosida to'g'rilangan materiallar hisobi
     """
     # ===== 1. ASOSIY MA'LUMOTLARNI O'QIB OLAMIZ =====
     L = params.get("L", 30)
@@ -2703,72 +3011,62 @@ def calculate_advanced_materials(params):
     H = params.get("H", 7.5)
     roof_pitch = params.get("roof_pitch", 12)
     system_type = params.get("construction_system", "LMK (Yengil Metall)")
+    column_spacing = params.get("column_spacing", 8.5)
     
-    # ===== 2. ASOSIY HISOB (calculate_construction_materials) =====
+    # ===== 2. ASOSIY HISOB =====
     materials = calculate_construction_materials(params)
     
-    # ===== 3. PROGONLAR (PURLINS) HISOBI =====
-    # Progonlar compute_metal_quantities ichida hisoblangan
-    # Uni qayta hisoblamaymiz, materials dan olamiz
+    # ===== 3. PROGONLAR =====
+    # compute_metal_quantities da hisoblangan, materials dan olamiz
+    materials["purlins_total_kg"] = materials.get("longitudinal_kg", 0)
+    materials["purlins_total_tonna"] = materials.get("longitudinal_tonna", 0)
     
-    # ===== 4. BOG'LAMALAR (BRACING) HISOBI =====
-    # ✅ TUZATISH: materials dan mavjud qiymatni olamiz
-    # compute_metal_quantities da hisoblangan bog'lamalar
+    # ===== 4. BOG'LAMALAR (Darslik VIII.7-band) =====
     if "boglamalar_kg" in materials:
         materials["bracing_kg"] = materials["boglamalar_kg"]
         materials["bracing_tonna"] = materials["boglamalar_tonna"]
+        materials["bracing_m"] = materials.get("boglamalar_m", 0)
     else:
-        # Faqat mavjud bo'lmasa hisoblaymiz
         seismic_zone = params.get("seismic_zone", 8)
-        wind_region = params.get("wind_region", "B")
-        bracing = compute_bracing(L, W, H, seismic_zone, wind_region)
+        bracing = compute_bracing(L, W, H, seismic_zone)
         materials["bracing_kg"] = bracing["total_kg"]
         materials["bracing_tonna"] = bracing["total_tonna"]
+        materials["bracing_m"] = bracing["total_m"]
     
-    # ===== 5. BIRIKMA DETALLARI (CONNECTIONS) HISOBI =====
-    # ✅ TUZATISH: materials dan mavjud qiymatni olamiz
-    # compute_metal_quantities da hisoblangan birikmalar
+    # ===== 5. BIRIKMA DETALLARI (Darslik I.1-band) =====
+    # ✅ FAQAT ASOSIY METALL ASOSIDA (bog'lamalarsiz)
     if "birikma_kg" in materials:
         materials["connection_kg"] = materials["birikma_kg"]
         materials["connection_tonna"] = materials["birikma_tonna"]
     else:
-        # Faqat mavjud bo'lmasa hisoblaymiz
-        total_metal_for_connections = (
+        # Asosiy metall: ustunlar + tosinlar + fermalar + progonlar (bog'lamalar YO'Q)
+        asosiy_metal = (
             materials["column_kg"] +
             materials["beam_kg"] +
             materials["truss_kg"] +
-            materials.get("purlins_total_kg", materials.get("longitudinal_kg", 0)) +
-            materials.get("bracing_kg", 0)
+            materials["purlins_total_kg"]
         )
         connection_type = params.get("connection_type", "mixed")
-        connections = compute_connections(total_metal_for_connections, connection_type)
+        connections = compute_connections(asosiy_metal, connection_type)
         materials["connection_kg"] = connections["weight_kg"]
         materials["connection_tonna"] = connections["weight_tonna"]
     
-    # ===== 6. PROGON MA'LUMOTLARINI TO'LDIRISH =====
-    # ✅ TUZATISH: longitudinal_kg dan purlins_total_kg ga o'tkazamiz
-    materials["purlins_total_kg"] = materials.get("longitudinal_kg", 0)
-    materials["purlins_total_tonna"] = materials.get("longitudinal_tonna", 0)
-    
-    # ===== 7. JAMI METALL OG'IRLIK =====
-    # ✅ TUZATISH: Faqat bir marta hisoblaymiz
-    # compute_metal_quantities da hisoblangan total_metal_kg dan olamiz
+    # ===== 6. JAMI METALL OG'IRLIK =====
     materials["metal_kg"] = materials.get("total_metal_kg", 0)
     materials["metal_tonna"] = materials.get("total_metal_tonna", 0)
     
-    # Agar total_metal_kg mavjud bo'lmasa, qo'lda hisoblaymiz
     if materials["metal_kg"] == 0:
         materials["metal_kg"] = (
             materials["column_kg"] +
             materials["beam_kg"] +
             materials["truss_kg"] +
-            materials["purlins_total_kg"] +
+            materials.get("purlins_total_kg", materials.get("longitudinal_kg", 0)) +
             materials["bracing_kg"] +
             materials["connection_kg"]
         )
         materials["metal_tonna"] = round(materials["metal_kg"] / 1000, 3)
     
-    # ===== 8. NARXLAR =====
+    # ===== 7. NARXLAR =====
     price_column = params.get("price_metal_column", 950)
     price_beam = params.get("price_metal_beam", 950)
     price_truss = params.get("price_metal_truss", 950)
@@ -2792,14 +3090,14 @@ def calculate_advanced_materials(params):
         materials["connection_cost"]
     )
     
-    # ===== 9. SEYSiMIK QO'SHIMCHA =====
+    # ===== 8. SEYSiMIK QO'SHIMCHA =====
     seismic_zone = params.get("seismic_zone", 8)
     seismic_factors = {7: 0.05, 8: 0.10, 9: 0.15}
     seismic_factor = seismic_factors.get(seismic_zone, 0.10)
     materials["seismic_extra_cost"] = round(materials["metal_karkas_cost"] * seismic_factor)
     materials["seismic_factor"] = seismic_factor
     
-    # ===== 10. MUHANDISLIK TIZIMLARI =====
+    # ===== 9. MUHANDISLIK TIZIMLARI =====
     engineering_cost = 0
     engineering_details = {}
     
@@ -2826,7 +3124,7 @@ def calculate_advanced_materials(params):
     materials["engineering_systems_cost"] = round(engineering_cost)
     materials["engineering_details"] = engineering_details
     
-    # ===== 11. MATERIALLAR UMUMIY NARXI =====
+    # ===== 10. MATERIALLAR UMUMIY NARXI =====
     materials["material_total"] = round(
         materials["metal_karkas_cost"] +
         materials["wall_cost"] +
@@ -2843,12 +3141,12 @@ def calculate_advanced_materials(params):
         materials["shipyak_cost"]
     )
     
-    # ===== 12. ISHCHI KUCHI =====
+    # ===== 11. ISHCHI KUCHI =====
     labor_percent = params.get("labor_percent", 32)
     materials["labor_cost"] = round(materials["material_total"] * (labor_percent / 100))
     materials["labor_percent"] = labor_percent
     
-    # ===== 13. UMUMIY QURILISH NARXI =====
+    # ===== 12. UMUMIY QURILISH NARXI =====
     materials["optimized_total"] = round(
         materials["material_total"] + 
         materials["labor_cost"] + 
@@ -2856,15 +3154,14 @@ def calculate_advanced_materials(params):
         materials["engineering_systems_cost"]
     )
     
-    # ===== 14. 1 m² NARXI =====
+    # ===== 13. 1 m² NARXI =====
     floor_area = materials.get("floor_area_m2", L * W)
     materials["cost_per_m2"] = round(
         materials["optimized_total"] / floor_area, 1
     ) if floor_area > 0 else 0
     
-    # ===== 15. XULOSAVIY JADVAL =====
+    # ===== 14. XULOSAVIY JADVAL =====
     materials["summary"] = {
-        # Metall konstruksiya
         "ustunlar_tonna": materials["column_tonna"],
         "tosinlar_tonna": materials["beam_tonna"],
         "fermalar_tonna": materials["truss_tonna"],
@@ -2872,29 +3169,22 @@ def calculate_advanced_materials(params):
         "boglamalar_tonna": materials["bracing_tonna"],
         "birikmalar_tonna": materials["connection_tonna"],
         "jami_metall_tonna": materials["metal_tonna"],
-        
-        # Maydonlar
         "umumiy_maydon_m2": floor_area,
         "devor_maydoni_m2": materials.get("wall_area_m2", 0),
         "tom_maydoni_m2": materials.get("roof_area_m2", 0),
         "pol_maydoni_m2": materials.get("floor_area_m2", 0),
-        
-        # Narxlar
         "materiallar_narxi": materials["material_total"],
         "ishchi_kuchi_narxi": materials["labor_cost"],
         "seysmik_qoshimcha": materials["seismic_extra_cost"],
         "muhandislik_narxi": materials["engineering_systems_cost"],
         "jami_narx": materials["optimized_total"],
         "1m2_narxi": materials["cost_per_m2"],
-        
-        # Konstruksiya
         "konstruksiya_turi": system_type,
         "birikma_turi": materials.get("connection_type", "mixed"),
         "seysmik_zona": seismic_zone,
     }
     
     return materials
-
 
 
 def draw_sheet_layout(ax, title_text, detail_num, scale="1:10", doc_code="EP-001-KM"):
@@ -3597,20 +3887,20 @@ def construction_sidebar():
         st.caption("Old fasad (darvozalar tomon)")
         col_w1, col_w2 = st.columns(2)
         with col_w1:
-            w_front = st.number_input("Old deraza soni", min_value=0, max_value=20, value=3, key="win_front")
+            w_front = st.number_input("Old deraza soni", min_value=0, max_value=50, value=3, key="win_front")
         with col_w2:
-            w_back = st.number_input("Orqa deraza soni", min_value=0, max_value=20, value=3, key="win_back")
+            w_back = st.number_input("Orqa deraza soni", min_value=0, max_value=50, value=3, key="win_back")
         col_w3, col_w4 = st.columns(2)
         with col_w3:
-            w_left = st.number_input("Chap deraza soni", min_value=0, max_value=20, value=0, key="win_left")
+            w_left = st.number_input("Chap deraza soni", min_value=0, max_value=50, value=0, key="win_left")
         with col_w4:
-            w_right = st.number_input("O'ng deraza soni", min_value=0, max_value=20, value=0, key="win_right")
+            w_right = st.number_input("O'ng deraza soni", min_value=0, max_value=50, value=0, key="win_right")
         
         col_ws1, col_ws2 = st.columns(2)
         with col_ws1:
-            window_width = st.number_input("Deraza eni (m)", min_value=0.5, max_value=5.0, value=2.5, step=0.1, key="cons_win_w")
+            window_width = st.number_input("Deraza eni (m)", min_value=0.5, max_value=25.0, value=2.5, step=0.1, key="cons_win_w")
         with col_ws2:
-            window_height = st.number_input("Deraza boyi (m)", min_value=0.5, max_value=4.0, value=2.0, step=0.1, key="cons_win_h")
+            window_height = st.number_input("Deraza boyi (m)", min_value=0.5, max_value=40.0, value=2.0, step=0.1, key="cons_win_h")
 
     with st.sidebar.expander("Darvozalar", expanded=False):
         st.markdown("#### Old devor (Z=W)")
@@ -3626,8 +3916,8 @@ def construction_sidebar():
         with col_d3:
             door_back_count = st.number_input("Orqa darvoza soni", min_value=0, max_value=20, value=0, key="door_back")
         with col_d4:
-            door_back_width = st.number_input("Orqa darvoza eni (m)", min_value=2.0, max_value=20.0, value=12.0, step=1.0, key="door_back_w")
-            door_back_height = st.number_input("Orqa darvoza boyi (m)", min_value=2.0, max_value=10.0, value=6.5, step=0.5, key="door_back_h")
+            door_back_width = st.number_input("Orqa darvoza eni (m)", min_value=0.0, max_value=20.0, value=12.0, step=1.0, key="door_back_w")
+            door_back_height = st.number_input("Orqa darvoza boyi (m)", min_value=0.0, max_value=10.0, value=6.5, step=0.5, key="door_back_h")
 
         st.markdown("#### Chap devor (X=0)")
         col_d5, col_d6 = st.columns(2)
